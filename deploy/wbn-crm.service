@@ -1,0 +1,17 @@
+[Unit]
+Description=WBN CRM Portal (Gunicorn)
+After=network-online.target
+
+[Service]
+User=wbncrm
+Group=www-data
+WorkingDirectory=/opt/wbn-crm/current
+EnvironmentFile=/etc/wbn-crm.env
+ExecStart=/opt/wbn-crm/venv/bin/gunicorn --workers 2 --threads 2 --timeout 120 --bind 127.0.0.1:5100 app:app
+Restart=always
+RestartSec=5
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

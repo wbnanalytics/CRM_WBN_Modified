@@ -1,0 +1,10 @@
+[Unit]
+Description=Run WBN CRM imports daily at 08:00 IST
+
+[Timer]
+OnCalendar=*-*-* 02:30:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target

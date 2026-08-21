@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Wellbeing Nutrition customer success metrics portal">
+  <title>{{ page_title }} | WBN CRM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">W</span><span>wellbeing<br>nutrition</span></a>
+      <nav aria-label="Main navigation">
+        <span class="nav-label">WORKSPACE</span>
+        <a class="nav-item {{ 'active' if active_page == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>
+        <span class="nav-label section-label">CS METRIC</span>
+        <a class="nav-item {{ 'active' if active_page == 'zoho' }}" href="{{ url_for('zoho') }}"><span class="nav-glyph boxed">Z</span>Zoho</a>
+        <a class="nav-item {{ 'active' if active_page == 'bik' }}" href="{{ url_for('bik') }}"><span class="nav-glyph boxed">B</span>BIK</a>
+        <div class="nav-item disabled"><span class="nav-glyph boxed">O</span>Ozonetel <small>Later</small></div>
+        <span class="nav-label section-label">PERFORMANCE</span>
+        <a class="nav-item {{ 'active' if active_page == 'scorecard' }}" href="{{ url_for('scorecard') }}"><span class="nav-glyph">◇</span>Scorecard <small>Soon</small></a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="user-avatar">CS</div><div><strong>CS Team</strong><span>Internal workspace</span></div>
+        <a class="logout-link" href="{{ url_for('logout') }}" aria-label="Log out">↗</a>
+      </div>
+    </aside>
+    <main class="main-content">
+      <header class="mobile-header"><button id="menuButton" aria-label="Open navigation">☰</button><span class="mini-logo">WBN</span></header>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>

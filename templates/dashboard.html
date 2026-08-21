@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-heading">
+  <div><span class="eyebrow">CS METRIC</span><h1>Good morning, team.</h1><p>Your customer support picture, ready for review.</p></div>
+  <div class="heading-actions"><span class="date-chip" id="todayLabel">Today</span><button class="primary-button" type="button" data-demo-action="sync">Sync reports <span>↗</span></button></div>
+</section>
+<section class="metric-grid" aria-label="Metric summary">
+  <article class="metric-card featured"><div class="metric-top"><span>Total tickets</span><span class="trend neutral">Live data</span></div><strong>{{ total }}</strong><p>{{ start.strftime('%d %b') }} – {{ end.strftime('%d %b %Y') }}</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Resolved</span><span class="metric-symbol sage">✓</span></div><strong>{{ resolved }}</strong><p>{{ resolution_rate }}% resolution rate</p></article>
+  <article class="metric-card"><div class="metric-top"><span>BIK first response</span><span class="metric-symbol amber">◷</span></div><strong>{{ (bik_metrics.avg_frt_seconds / 60)|round(1) }}m</strong><p>Average first response</p></article>
+  <article class="metric-card"><div class="metric-top"><span>BIK CSAT</span><span class="metric-symbol blue">★</span></div><strong>{{ bik_metrics.csat_score }}%</strong><p>{{ bik_metrics.csat_responses }} responses</p></article>
+</section>
+<section class="dashboard-grid">
+  <article class="panel performance-panel">
+    <div class="panel-head"><div><span class="eyebrow">OVERVIEW</span><h2>Service performance</h2></div><select aria-label="Performance time period"><option>Last 7 days</option><option>Last 30 days</option></select></div>
+    <div class="empty-chart"><div class="chart-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h3>{{ zoho_metrics.total }} Zoho + {{ bik_metrics.total }} BIK tickets</h3><p>{{ bik_metrics.messages }} BIK messages across {{ bik_metrics.conversations }} conversations in this period.</p></div>
+  </article>
+  <aside class="panel sources-panel">
+    <div class="panel-head"><div><span class="eyebrow">DATA SOURCES</span><h2>Connections</h2></div></div>
+    {% for key, source in sources.items() %}
+    <a class="connection-row" href="{{ url_for(key) }}"><span class="source-icon {{ key }}">{{ source.name[0] }}</span><span class="connection-copy"><strong>{{ source.name }}</strong><small>{{ source.reports|length }} reports</small></span><span class="status {{ connector_status(key) }}"><i></i>{{ 'Configured' if connector_status(key) == 'configured' else 'Setup needed' }}</span></a>
+    {% endfor %}
+    <div class="connection-row disabled-row"><span class="source-icon future">O</span><span class="connection-copy"><strong>Ozonetel</strong><small>Planned for later</small></span><span class="status later">Later</span></div>
+  </aside>
+</section>
+<section class="panel report-panel">
+  <div class="panel-head"><div><span class="eyebrow">REPORTS</span><h2>Recent activity</h2></div><button class="text-button" type="button">View all →</button></div>
+  <div class="table-wrap"><table><thead><tr><th>Report</th><th>Source</th><th>Last updated</th><th>Status</th><th></th></tr></thead><tbody>
+    <tr><td><strong>Customer Experience</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
+    <tr><td><strong>Escalation Queue</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
+    <tr><td><strong>All Conversations</strong></td><td><span class="table-source bik">B</span> BIK</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
+  </tbody></table></div>
+</section>
+{% endblock %}
