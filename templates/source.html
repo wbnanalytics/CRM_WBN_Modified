@@ -4,13 +4,14 @@
   <div><span class="eyebrow">CS METRIC / {{ source.name|upper }}</span><h1>{{ source.name }}</h1><p>{{ source.description }}</p></div>
   <span class="status large {{ connector_status(source_key) }}"><i></i>{{ 'Credentials configured' if connector_status(source_key) == 'configured' else 'Setup needed' }}</span>
 </section>
+<div class="source-filter-row">{% include '_date_filter.html' %}</div>
 <section class="metric-grid source-metrics">
   <article class="metric-card featured"><div class="metric-top"><span>Total tickets</span><span class="trend neutral">Database</span></div><strong>{{ metrics.total }}</strong><p>{{ start.strftime('%d %b') }} – {{ end.strftime('%d %b %Y') }}</p></article>
   <article class="metric-card"><div class="metric-top"><span>Resolved</span><span class="metric-symbol sage">✓</span></div><strong>{{ metrics.resolved }}</strong><p>{{ metrics.resolution_rate }}% resolution rate</p></article>
   <article class="metric-card"><div class="metric-top"><span>Open</span><span class="metric-symbol amber">◷</span></div><strong>{{ metrics.open }}</strong><p>Currently unresolved</p></article>
   <article class="metric-card"><div class="metric-top"><span>{{ 'CSAT' if source_key == 'bik' else 'Channels' }}</span><span class="metric-symbol blue">★</span></div><strong>{{ metrics.csat_score ~ '%' if source_key == 'bik' else metrics.channels|length }}</strong><p>{{ metrics.csat_responses ~ ' responses' if source_key == 'bik' else 'active channels' }}</p></article>
 </section>
-{% if source_key == 'zoho' %}<div class="report-tabs">{% for key, item in departments.items() %}<a class="{{ 'active' if key == department_key }}" href="{{ url_for('zoho', department=key, start=start, end=end) }}">{{ item.name }}</a>{% endfor %}</div>{% endif %}
+{% if source_key == 'zoho' %}<div class="report-tabs">{% for key, item in departments.items() %}<a class="{{ 'active' if key == department_key }}" href="{{ url_for('zoho', department=key, preset=preset, start=start, end=end) }}">{{ item.name }}</a>{% endfor %}</div>{% endif %}
 <section class="dashboard-grid">
   <article class="panel"><div class="panel-head"><div><span class="eyebrow">TICKETS BY CHANNEL</span><h2>{{ department.name if source_key == 'zoho' else 'BIK channels' }}</h2></div></div><div class="breakdown-list">{% for row in metrics.channels %}<div class="breakdown-row"><span>{{ row.label|title }}</span><div><i style="width:{{ (row.value / metrics.total * 100)|round if metrics.total else 0 }}%"></i></div><strong>{{ row.value }}</strong></div>{% else %}<p class="empty-copy">No imported data for this period.</p>{% endfor %}</div></article>
   <article class="panel"><div class="panel-head"><div><span class="eyebrow">STATUS</span><h2>Ticket stages</h2></div></div><div class="breakdown-list">{% for row in metrics.statuses[:7] %}<div class="breakdown-row"><span>{{ row.label|replace('_',' ')|title }}</span><div><i style="width:{{ (row.value / metrics.total * 100)|round if metrics.total else 0 }}%"></i></div><strong>{{ row.value }}</strong></div>{% else %}<p class="empty-copy">No imported data for this period.</p>{% endfor %}</div></article>

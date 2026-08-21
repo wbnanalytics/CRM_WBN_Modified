@@ -1,5 +1,6 @@
 import os
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 import requests
 import msal
@@ -17,6 +18,14 @@ app.secret_key = os.getenv("SECRET_KEY", "local-preview-only-change-me")
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=os.getenv("APP_ENV") == "production")
 init_db()
+
+IST = ZoneInfo("Asia/Kolkata")
+DATE_PRESETS = (
+    ("today", "Today"), ("yesterday", "Yesterday"), ("last_7", "Last 7 days"),
+    ("last_30", "Last 30 days"), ("last_60", "Last 60 days"),
+    ("last_90", "Last 90 days"), ("this_year", "This year"),
+    ("last_year", "Last year"), ("custom", "Custom range"),
+)
 
 
 REPORT_SOURCES = {
@@ -44,10 +53,31 @@ def connector_status(source):
     return "configured" if configured else "needs_setup"
 
 
-def selected_range(default_days=30):
-    end = date.fromisoformat(request.args.get("end", date.today().isoformat()))
-    start = date.fromisoformat(request.args.get("start", (end - timedelta(days=default_days - 1)).isoformat()))
-    return start, end
+def selected_range():
+    today = datetime.now(IST).date()
+    preset = request.args.get("preset", "last_30")
+    if preset == "today":
+        start = end = today
+    elif preset == "yesterday":
+        start = end = today - timedelta(days=1)
+    elif preset in {"last_7", "last_30", "last_60", "last_90"}:
+        days = int(preset.split("_")[1])
+        end, start = today, today - timedelta(days=days - 1)
+    elif preset == "this_year":
+        start, end = date(today.year, 1, 1), today
+    elif preset == "last_year":
+        start, end = date(today.year - 1, 1, 1), date(today.year - 1, 12, 31)
+    elif preset == "custom":
+        try:
+            start = date.fromisoformat(request.args["start"])
+            end = date.fromisoformat(request.args["end"])
+        except (KeyError, ValueError):
+            preset, end, start = "last_30", today, today - timedelta(days=29)
+    else:
+        preset, end, start = "last_30", today, today - timedelta(days=29)
+    if start > end:
+        start, end = end, start
+    return start, end, preset
 
 
 def microsoft_ready():
@@ -140,28 +170,28 @@ def logout():
 
 @app.route("/dashboard")
 def dashboard():
-    start, end = selected_range()
+    start, end, preset = selected_range()
     zoho_data = zoho_metrics(start.isoformat(), end.isoformat())
     bik_data = bik_metrics(start.isoformat(), end.isoformat())
     total = zoho_data["total"] + bik_data["total"]
     resolved = zoho_data["resolved"] + bik_data["resolved"]
-    return render_template("dashboard.html", active_page="dashboard", page_title="CS Metric Dashboard", sources=REPORT_SOURCES, zoho_metrics=zoho_data, bik_metrics=bik_data, total=total, resolved=resolved, resolution_rate=round(resolved / total * 100, 1) if total else 0, start=start, end=end, sync_runs=recent_sync_runs(5))
+    return render_template("dashboard.html", active_page="dashboard", page_title="CS Metric Dashboard", sources=REPORT_SOURCES, zoho_metrics=zoho_data, bik_metrics=bik_data, total=total, resolved=resolved, resolution_rate=round(resolved / total * 100, 1) if total else 0, start=start, end=end, preset=preset, date_presets=DATE_PRESETS, sync_runs=recent_sync_runs(5))
 
 
 @app.route("/zoho")
 def zoho():
-    start, end = selected_range()
+    start, end, preset = selected_range()
     department_key = request.args.get("department", "customer_experience")
     department = ZOHO_DEPARTMENTS.get(department_key, ZOHO_DEPARTMENTS["customer_experience"])
     metrics = zoho_metrics(start.isoformat(), end.isoformat(), department["id"])
-    return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end)
+    return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
 
 
 @app.route("/bik")
 def bik():
-    start, end = selected_range()
+    start, end, preset = selected_range()
     metrics = bik_metrics(start.isoformat(), end.isoformat())
-    return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, start=start, end=end)
+    return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
 
 
 @app.route("/scorecard")
@@ -187,10 +217,10 @@ def health():
 
 @app.route("/api/metrics")
 def api_metrics():
-    start, end = selected_range()
+    start, end, preset = selected_range()
     department_key = request.args.get("department")
     department_id = ZOHO_DEPARTMENTS.get(department_key, {}).get("id") if department_key else None
-    return jsonify({"range": {"start": start.isoformat(), "end": end.isoformat()}, "zoho": zoho_metrics(start.isoformat(), end.isoformat(), department_id), "bik": bik_metrics(start.isoformat(), end.isoformat())})
+    return jsonify({"range": {"start": start.isoformat(), "end": end.isoformat(), "preset": preset}, "zoho": zoho_metrics(start.isoformat(), end.isoformat(), department_id), "bik": bik_metrics(start.isoformat(), end.isoformat())})
 
 
 @app.route("/auth/microsoft/callback")

@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page-heading">
   <div><span class="eyebrow">CS METRIC</span><h1>Good morning, team.</h1><p>Your customer support picture, ready for review.</p></div>
-  <div class="heading-actions"><span class="date-chip" id="todayLabel">Today</span><button class="primary-button" type="button" data-demo-action="sync">Sync reports <span>↗</span></button></div>
+  <div class="heading-actions">{% include '_date_filter.html' %}</div>
 </section>
 <section class="metric-grid" aria-label="Metric summary">
   <article class="metric-card featured"><div class="metric-top"><span>Total tickets</span><span class="trend neutral">Live data</span></div><strong>{{ total }}</strong><p>{{ start.strftime('%d %b') }} – {{ end.strftime('%d %b %Y') }}</p></article>
