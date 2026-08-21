@@ -1,8 +1,8 @@
 [Unit]
-Description=Refresh today's WBN CRM reports at 12:00 and 18:00 IST
+Description=Refresh today's WBN CRM reports at 21:00 IST
 
 [Timer]
-OnCalendar=*-*-* 06:30,12:30:00 UTC
+OnCalendar=*-*-* 15:30:00 UTC
 Persistent=true
 RandomizedDelaySec=120
 
