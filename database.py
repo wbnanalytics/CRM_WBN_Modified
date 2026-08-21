@@ -311,12 +311,18 @@ def _safe_int(value):
         return 0
 
 
-def save_bik_tickets(rows, local_date, duration_parser):
+def clear_bik_report_date(report_key, local_date):
+    table = "bik_tickets" if report_key == "customer_tickets" else "bik_conversations"
+    with db_connection() as db:
+        db.execute(f"DELETE FROM {table} WHERE local_date = ?", (local_date,))
+
+
+def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
     now = utc_now()
     values = []
-    for row in rows:
+    for index, row in enumerate(rows, start=row_offset):
         values.append((
-            _row_hash(row), row.get("Ticket Id"), local_date, row.get("Channel"),
+            _row_hash({"row": row, "position": index, "date": local_date}), row.get("Ticket Id"), local_date, row.get("Channel"),
             row.get("Ticket stage"), row.get("Agent name"), row.get("Ticket created timestamp"),
             row.get("Ticket assigned timestamp"), row.get("Ticket close timestamp"),
             duration_parser(row.get("Ticket closure time")), duration_parser(row.get("First response time")),
@@ -341,13 +347,13 @@ def save_bik_tickets(rows, local_date, duration_parser):
     return len(values)
 
 
-def save_bik_conversations(rows, local_date):
+def save_bik_conversations(rows, local_date, row_offset=0):
     now = utc_now()
     values = [(
-        _row_hash(row), row.get("Ticket ID"), local_date, row.get("Channel"), row.get("Sent At"),
+        _row_hash({"row": row, "position": index, "date": local_date}), row.get("Ticket ID"), local_date, row.get("Channel"), row.get("Sent At"),
         row.get("Sender"), row.get("Agent ID"), row.get("Agent Name"), row.get("Ticket Stage"),
         row.get("Ticket Creation Timestamp"), row.get("Ticket Closed Timestamp"), now,
-    ) for row in rows]
+    ) for index, row in enumerate(rows, start=row_offset)]
     with db_connection() as db:
         db.executemany(
             """INSERT INTO bik_conversations VALUES (?,?,?,?,?,?,?,?,?,?,?,?)

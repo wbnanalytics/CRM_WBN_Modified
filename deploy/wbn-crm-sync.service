@@ -8,5 +8,5 @@ User=wbncrm
 Group=www-data
 WorkingDirectory=/opt/wbn-crm/current
 EnvironmentFile=/etc/wbn-crm.env
-ExecStart=/opt/wbn-crm/venv/bin/python sync_reports.py
+ExecStart=/opt/wbn-crm/venv/bin/python sync_reports.py --today
 Nice=10

@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from database import (
-    finish_sync_run, save_bik_conversations, save_bik_tickets,
+    clear_bik_report_date, finish_sync_run, save_bik_conversations, save_bik_tickets,
     start_sync_run, upsert_zoho_tickets,
 )
 
@@ -143,7 +143,7 @@ def generate_bik_report(report_key, start_date, end_date, recipient_email, curso
     start_date = _parse_date(start_date)
     end_date = _parse_date(end_date)
     start_utc = datetime.combine(start_date, time.min, tzinfo=IST).astimezone(timezone.utc)
-    end_utc = datetime.combine(end_date, time.max, tzinfo=IST).astimezone(timezone.utc)
+    end_utc = min(datetime.combine(end_date, time.max, tzinfo=IST).astimezone(timezone.utc), datetime.now(timezone.utc) - timedelta(seconds=5))
     payload = {
         "reportName": config["api_name"],
         "dateRange": {
@@ -213,6 +213,7 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
     external_ids = []
     cursor = None
     try:
+        clear_bik_report_date(report_key, start_date.isoformat())
         for _ in range(10):
             generated = generate_bik_report(report_key, start_date, end_date, recipient_email, cursor)
             history_id = (generated.get("data") or {}).get("reportHistoryId")
@@ -222,9 +223,9 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
             completed = _poll_bik_report(history_id)
             rows = _download_csv(completed["downloadLink"])
             if report_key == "customer_tickets":
-                saved = save_bik_tickets(rows, start_date.isoformat(), parse_duration_seconds)
+                saved = save_bik_tickets(rows, start_date.isoformat(), parse_duration_seconds, total)
             else:
-                saved = save_bik_conversations(rows, start_date.isoformat())
+                saved = save_bik_conversations(rows, start_date.isoformat(), total)
             total += saved
             cursor = completed.get("cursor")
             if not cursor:

@@ -7,7 +7,7 @@ Internal Customer Success metrics portal for Wellbeing Nutrition.
 - Zoho Desk: Customer Experience and Customer Escalation, Tickets by Channel
 - BIK: Customer Ticket Report and All Conversations Report
 
-Daily imports run at 08:00 IST. The web application reads only from its database; source credentials remain in the server environment and are never committed.
+Imports run at 06:00, 12:00, and 18:00 IST. The web application reads only from its database; source credentials remain in the server environment and are never committed.
 
 ## Production
 
