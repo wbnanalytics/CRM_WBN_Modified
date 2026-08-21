@@ -13,11 +13,21 @@ token="$({ curl -fsS -H Metadata:true \
   'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net'; } | \
   python3 -c 'import json,sys; print(json.load(sys.stdin)["access_token"])')"
 
+fetch_secret() {
+  curl -fsS -H "Authorization: Bearer $token" \
+    "https://wbn-crm-kv-350869.vault.azure.net/secrets/$1?api-version=7.4" | \
+    python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])'
+}
+
 curl -fsS -H "Authorization: Bearer $token" \
   'https://wbn-crm-kv-350869.vault.azure.net/secrets/production-env-base?api-version=7.4' | \
   python3 -c 'import json,sys; open("/etc/wbn-crm.env", "w").write(json.load(sys.stdin)["value"].rstrip() + "\n")'
 
 printf '%s\n' \
+  "SECRET_KEY=$(fetch_secret flask-secret-key)" \
+  "AZURE_CLIENT_ID=$(fetch_secret azure-client-id)" \
+  "AZURE_CLIENT_SECRET=$(fetch_secret azure-client-secret)" \
+  "AZURE_TENANT_ID=$(fetch_secret azure-tenant-id)" \
   'BIK_REPORT_EMAIL=implementations@wellbeingnutrition.com' \
   'CRM_DATA_DIR=/var/lib/wbn-crm' \
   'APP_ENV=production' \
