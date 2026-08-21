@@ -2,6 +2,7 @@ import json
 import os
 import csv
 import io
+import itertools
 import re
 import time as time_module
 from datetime import date, datetime, time, timedelta, timezone
@@ -197,11 +198,17 @@ def _poll_bik_report(report_history_id, attempts=60):
     raise IntegrationError(f"BIK report {report_history_id} did not complete in time")
 
 
-def _download_csv(url):
-    response = requests.get(url, timeout=120)
-    response.raise_for_status()
-    text = response.content.decode("utf-8-sig")
-    return list(csv.DictReader(io.StringIO(text)))
+def _download_csv_batches(url, batch_size=5000):
+    with requests.get(url, timeout=(30, 300), stream=True) as response:
+        response.raise_for_status()
+        response.raw.decode_content = True
+        wrapper = io.TextIOWrapper(response.raw, encoding="utf-8-sig", newline="")
+        reader = csv.DictReader(wrapper)
+        while True:
+            batch = list(itertools.islice(reader, batch_size))
+            if not batch:
+                break
+            yield batch
 
 
 def sync_bik(report_key, start_date, end_date, recipient_email=None):
@@ -221,12 +228,12 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
                 raise IntegrationError("BIK did not return a report history ID")
             external_ids.append(str(history_id))
             completed = _poll_bik_report(history_id)
-            rows = _download_csv(completed["downloadLink"])
-            if report_key == "customer_tickets":
-                saved = save_bik_tickets(rows, start_date.isoformat(), parse_duration_seconds, total)
-            else:
-                saved = save_bik_conversations(rows, start_date.isoformat(), total)
-            total += saved
+            for rows in _download_csv_batches(completed["downloadLink"]):
+                if report_key == "customer_tickets":
+                    saved = save_bik_tickets(rows, start_date.isoformat(), parse_duration_seconds, total)
+                else:
+                    saved = save_bik_conversations(rows, start_date.isoformat(), total)
+                total += saved
             cursor = completed.get("cursor")
             if not cursor:
                 break
