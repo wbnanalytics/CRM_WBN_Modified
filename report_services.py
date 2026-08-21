@@ -202,10 +202,9 @@ def _download_csv_batches(url, batch_size=5000):
         response.raise_for_status()
         def decoded_lines():
             first = True
-            for line in response.iter_lines(decode_unicode=True):
-                if first:
-                    line = line.lstrip("\ufeff")
-                    first = False
+            for raw_line in response.iter_lines():
+                line = raw_line.decode("utf-8-sig" if first else "utf-8")
+                first = False
                 yield line
 
         reader = csv.DictReader(decoded_lines())
