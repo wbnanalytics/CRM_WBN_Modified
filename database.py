@@ -1,5 +1,6 @@
 import json
 import hashlib
+import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -7,7 +8,7 @@ from pathlib import Path
 
 
 BASE_DIR = Path(__file__).resolve().parent
-DATA_DIR = BASE_DIR / "data"
+DATA_DIR = Path(os.getenv("CRM_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "crm.db"
 
 
