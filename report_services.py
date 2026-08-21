@@ -10,7 +10,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from database import (
-    clear_bik_report_date, finish_sync_run, save_bik_conversations, save_bik_tickets,
+    clear_bik_report_range, finish_sync_run, save_bik_conversations, save_bik_tickets,
     start_sync_run, upsert_zoho_tickets,
 )
 
@@ -92,7 +92,7 @@ def sync_zoho(start_date, end_date):
         offset = 0
         page_size = 100
         reached_start = False
-        while offset < 20000 and not reached_start:
+        while offset < 500000 and not reached_start:
             response = requests.get(
                 endpoint,
                 headers=headers,
@@ -213,7 +213,7 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
     external_ids = []
     cursor = None
     try:
-        clear_bik_report_date(report_key, start_date.isoformat())
+        clear_bik_report_range(report_key, start_date.isoformat(), end_date.isoformat())
         for _ in range(10):
             generated = generate_bik_report(report_key, start_date, end_date, recipient_email, cursor)
             history_id = (generated.get("data") or {}).get("reportHistoryId")

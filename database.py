@@ -1,6 +1,7 @@
 import json
 import hashlib
 import os
+import re
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -311,18 +312,34 @@ def _safe_int(value):
         return 0
 
 
-def clear_bik_report_date(report_key, local_date):
+def clear_bik_report_range(report_key, start_date, end_date):
     table = "bik_tickets" if report_key == "customer_tickets" else "bik_conversations"
     with db_connection() as db:
-        db.execute(f"DELETE FROM {table} WHERE local_date = ?", (local_date,))
+        db.execute(f"DELETE FROM {table} WHERE local_date BETWEEN ? AND ?", (start_date, end_date))
+
+
+def _bik_local_date(value, fallback):
+    if not value:
+        return fallback
+    cleaned = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", str(value).strip(), flags=re.IGNORECASE)
+    for fmt in ("%d %b %Y, %H:%M:%S", "%d %b %Y, %I:%M:%S %p", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return datetime.strptime(cleaned, fmt).date().isoformat()
+        except ValueError:
+            pass
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return fallback
 
 
 def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
     now = utc_now()
     values = []
     for index, row in enumerate(rows, start=row_offset):
+        row_date = _bik_local_date(row.get("Ticket created timestamp"), local_date)
         values.append((
-            _row_hash({"row": row, "position": index, "date": local_date}), row.get("Ticket Id"), local_date, row.get("Channel"),
+            _row_hash({"row": row, "position": index, "date": row_date}), row.get("Ticket Id"), row_date, row.get("Channel"),
             row.get("Ticket stage"), row.get("Agent name"), row.get("Ticket created timestamp"),
             row.get("Ticket assigned timestamp"), row.get("Ticket close timestamp"),
             duration_parser(row.get("Ticket closure time")), duration_parser(row.get("First response time")),
@@ -350,7 +367,8 @@ def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
 def save_bik_conversations(rows, local_date, row_offset=0):
     now = utc_now()
     values = [(
-        _row_hash({"row": row, "position": index, "date": local_date}), row.get("Ticket ID"), local_date, row.get("Channel"), row.get("Sent At"),
+        _row_hash({"row": row, "position": index, "date": _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date)}),
+        row.get("Ticket ID"), _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date), row.get("Channel"), row.get("Sent At"),
         row.get("Sender"), row.get("Agent ID"), row.get("Agent Name"), row.get("Ticket Stage"),
         row.get("Ticket Creation Timestamp"), row.get("Ticket Closed Timestamp"), now,
     ) for index, row in enumerate(rows, start=row_offset)]
