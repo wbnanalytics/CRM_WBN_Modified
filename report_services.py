@@ -1,7 +1,6 @@
 import json
 import os
 import csv
-import io
 import itertools
 import re
 import time as time_module
@@ -201,9 +200,15 @@ def _poll_bik_report(report_history_id, attempts=60):
 def _download_csv_batches(url, batch_size=5000):
     with requests.get(url, timeout=(30, 300), stream=True) as response:
         response.raise_for_status()
-        response.raw.decode_content = True
-        wrapper = io.TextIOWrapper(response.raw, encoding="utf-8-sig", newline="")
-        reader = csv.DictReader(wrapper)
+        def decoded_lines():
+            first = True
+            for line in response.iter_lines(decode_unicode=True):
+                if first:
+                    line = line.lstrip("\ufeff")
+                    first = False
+                yield line
+
+        reader = csv.DictReader(decoded_lines())
         while True:
             batch = list(itertools.islice(reader, batch_size))
             if not batch:
