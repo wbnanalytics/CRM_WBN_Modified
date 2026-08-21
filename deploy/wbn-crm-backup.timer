@@ -2,7 +2,7 @@
 Description=Back up WBN CRM database daily
 
 [Timer]
-OnCalendar=*-*-* 03:30:00 UTC
+OnCalendar=*-*-* 04:30:00 UTC
 Persistent=true
 
 [Install]
