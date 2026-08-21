@@ -12,7 +12,7 @@
 </section>
 <section class="dashboard-grid">
   <article class="panel performance-panel">
-    <div class="panel-head"><div><span class="eyebrow">OVERVIEW</span><h2>Service performance</h2></div><select aria-label="Performance time period"><option>Last 7 days</option><option>Last 30 days</option></select></div>
+    <div class="panel-head"><div><span class="eyebrow">OVERVIEW</span><h2>Service performance</h2></div><span class="count-badge">Selected period</span></div>
     <div class="empty-chart"><div class="chart-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h3>{{ zoho_metrics.total }} Zoho + {{ bik_metrics.total }} BIK tickets</h3><p>{{ bik_metrics.messages }} BIK messages across {{ bik_metrics.conversations }} conversations in this period.</p></div>
   </article>
   <aside class="panel sources-panel">
@@ -24,11 +24,12 @@
   </aside>
 </section>
 <section class="panel report-panel">
-  <div class="panel-head"><div><span class="eyebrow">REPORTS</span><h2>Recent activity</h2></div><button class="text-button" type="button">View all →</button></div>
+  <div class="panel-head"><div><span class="eyebrow">REPORTS</span><h2>Automatic imports</h2></div></div>
   <div class="table-wrap"><table><thead><tr><th>Report</th><th>Source</th><th>Last updated</th><th>Status</th><th></th></tr></thead><tbody>
-    <tr><td><strong>Customer Experience</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
-    <tr><td><strong>Escalation Queue</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
-    <tr><td><strong>All Conversations</strong></td><td><span class="table-source bik">B</span> BIK</td><td>Not imported</td><td><span class="status draft"><i></i>Ready to connect</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
+    <tr><td><strong>Customer Experience</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
+    <tr><td><strong>Escalation Queue</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
+    <tr><td><strong>Customer Ticket Report</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
+    <tr><td><strong>All Conversations</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
   </tbody></table></div>
 </section>
 {% endblock %}
