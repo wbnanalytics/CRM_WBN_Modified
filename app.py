@@ -152,7 +152,7 @@ def microsoft_login():
     if not microsoft_ready():
         return redirect(url_for("index"))
     session["auth_state"] = os.urandom(24).hex()
-    url = msal_app().get_authorization_request_url(["User.Read"], state=session["auth_state"], redirect_uri=os.environ["AZURE_REDIRECT_URI"], prompt="select_account")
+    url = msal_app().get_authorization_request_url([], state=session["auth_state"], redirect_uri=os.environ["AZURE_REDIRECT_URI"], prompt="select_account")
     return redirect(url)
 
 
@@ -229,7 +229,7 @@ def microsoft_callback():
         return redirect(url_for("index"))
     if not microsoft_ready() or not request.args.get("code"):
         return redirect(url_for("index"))
-    result = msal_app().acquire_token_by_authorization_code(request.args["code"], scopes=["User.Read"], redirect_uri=os.environ["AZURE_REDIRECT_URI"])
+    result = msal_app().acquire_token_by_authorization_code(request.args["code"], scopes=[], redirect_uri=os.environ["AZURE_REDIRECT_URI"])
     claims = result.get("id_token_claims") or {}
     email = (claims.get("preferred_username") or claims.get("email") or "").lower()
     if not email.endswith("@wellbeingnutrition.com"):
