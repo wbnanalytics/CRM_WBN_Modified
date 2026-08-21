@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Wellbeing Nutrition customer success metrics portal">
   <title>{{ page_title }} | WBN CRM</title>
+  <link rel="icon" type="image/png" href="{{ url_for('static', filename='wbn-logo.png') }}">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='wbn-logo.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
@@ -15,7 +17,7 @@
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="{{ url_for('dashboard') }}"><span class="brand-mark">W</span><span>wellbeing<br>nutrition</span></a>
+      <a class="brand" href="{{ url_for('dashboard') }}"><img class="brand-logo" src="{{ url_for('static', filename='wbn-logo.png') }}" alt=""><span>wellbeing<br>nutrition</span></a>
       <nav aria-label="Main navigation">
         <span class="nav-label">WORKSPACE</span>
         <a class="nav-item {{ 'active' if active_page == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>

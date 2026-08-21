@@ -1,0 +1,7 @@
+[Unit]
+Description=Enable HTTPS for WBN CRM after DNS propagation
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/wbn-crm/current/deploy/enable-https.sh

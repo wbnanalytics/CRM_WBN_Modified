@@ -4,6 +4,11 @@ set -euo pipefail
 APP_DIR=/opt/wbn-crm/current
 VENV_DIR=/opt/wbn-crm/venv
 
+if ! command -v certbot >/dev/null 2>&1; then
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq certbot python3-certbot-nginx
+fi
+
 install -d -o wbncrm -g www-data /var/lib/wbn-crm /var/backups/wbn-crm
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install -q --upgrade pip
@@ -43,6 +48,12 @@ install -m 644 "$APP_DIR/deploy/wbn-crm-today.service" /etc/systemd/system/wbn-c
 install -m 644 "$APP_DIR/deploy/wbn-crm-today.timer" /etc/systemd/system/wbn-crm-today.timer
 install -m 644 "$APP_DIR/deploy/wbn-crm-backup.service" /etc/systemd/system/wbn-crm-backup.service
 install -m 644 "$APP_DIR/deploy/wbn-crm-backup.timer" /etc/systemd/system/wbn-crm-backup.timer
+install -m 644 "$APP_DIR/deploy/wbn-crm-cert.service" /etc/systemd/system/wbn-crm-cert.service
+install -m 644 "$APP_DIR/deploy/wbn-crm-cert.timer" /etc/systemd/system/wbn-crm-cert.timer
+install -m 644 "$APP_DIR/deploy/nginx-crm.conf" /etc/nginx/sites-available/wbn-crm
+ln -sfn /etc/nginx/sites-available/wbn-crm /etc/nginx/sites-enabled/wbn-crm
+nginx -t
+systemctl reload nginx
 
 systemctl daemon-reload
-systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer
+systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer wbn-crm-cert.timer
