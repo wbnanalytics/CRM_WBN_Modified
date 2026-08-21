@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh today's WBN CRM reports at 12:00 and 18:00 IST
+
+[Timer]
+OnCalendar=*-*-* 06:30,12:30:00 UTC
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
