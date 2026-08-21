@@ -16,13 +16,4 @@
   <article class="panel"><div class="panel-head"><div><span class="eyebrow">TICKETS BY CHANNEL</span><h2>{{ department.name if source_key == 'zoho' else 'BIK channels' }}</h2></div></div><div class="breakdown-list">{% for row in metrics.channels %}<div class="breakdown-row"><span>{{ row.label|title }}</span><div><i style="width:{{ (row.value / metrics.total * 100)|round if metrics.total else 0 }}%"></i></div><strong>{{ row.value }}</strong></div>{% else %}<p class="empty-copy">No imported data for this period.</p>{% endfor %}</div></article>
   <article class="panel"><div class="panel-head"><div><span class="eyebrow">STATUS</span><h2>Ticket stages</h2></div></div><div class="breakdown-list">{% for row in metrics.statuses[:7] %}<div class="breakdown-row"><span>{{ row.label|replace('_',' ')|title }}</span><div><i style="width:{{ (row.value / metrics.total * 100)|round if metrics.total else 0 }}%"></i></div><strong>{{ row.value }}</strong></div>{% else %}<p class="empty-copy">No imported data for this period.</p>{% endfor %}</div></article>
 </section>
-<section class="source-hero {{ source_key }}-hero">
-  <div><span class="source-icon large-icon {{ source_key }}">{{ source.name[0] }}</span><h2>{{ source.name }} reporting in one dependable daily view.</h2><p>Historical records are stored in the production database and refreshed automatically at 09:00 and 21:00 IST.</p></div>
-  <span class="status large"><i></i>Live connection</span>
-</section>
-<section class="panel">
-  <div class="panel-head"><div><span class="eyebrow">REPORT LIBRARY</span><h2>Reports to import</h2></div><span class="count-badge">{{ source.reports|length }} reports</span></div>
-  <div class="report-list">{% for report in source.reports %}<article class="report-row"><div class="report-number">0{{ loop.index }}</div><div class="report-copy"><h3>{{ report }}</h3><p>Automatic report · CS Metric</p></div><span class="status"><i></i>Active</span><span class="count-badge">09:00 / 21:00</span></article>{% endfor %}</div>
-</section>
-<section class="next-step-card"><span class="step-index">LIVE</span><div><h3>Automatic refresh enabled</h3><p>The 09:00 run finalizes the previous day; the 21:00 run refreshes the current day.</p></div></section>
 {% endblock %}
