@@ -2,6 +2,7 @@ import os
 import secrets
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
@@ -17,6 +18,14 @@ from report_services import ZOHO_DEPARTMENTS
 
 
 load_dotenv()
+for env_key, secret_file in {
+    "AZURE_CLIENT_ID": "azure-client-id",
+    "AZURE_CLIENT_SECRET": "azure-client-secret",
+    "AZURE_TENANT_ID": "azure-tenant-id",
+}.items():
+    secret_path = Path(__file__).resolve().parent / ".local-secrets" / secret_file
+    if not os.getenv(env_key) and secret_path.exists():
+        os.environ[env_key] = secret_path.read_text(encoding="utf-8").strip()
 
 app = Flask(__name__)
 app.secret_key = os.getenv("SECRET_KEY", "local-preview-only-change-me")

@@ -1,4 +1,6 @@
 .env
+.env.azure
+.local-secrets/
 venv/
 __pycache__/
 *.pyc
