@@ -165,6 +165,11 @@ def init_db():
                 FOREIGN KEY (email) REFERENCES portal_users(email) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS schema_meta (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_zoho_tickets_department_date
                 ON zoho_tickets(department_id, created_local_date);
             CREATE INDEX IF NOT EXISTS idx_zoho_tickets_date_channel
@@ -187,6 +192,38 @@ def init_db():
                ON CONFLICT(email) DO UPDATE SET role='admin', active=1, updated_at=excluded.updated_at""",
             (PRIMARY_ADMIN_EMAIL, now, now),
         )
+        hash_version = db.execute(
+            "SELECT value FROM schema_meta WHERE key='bik_conversation_hash_version'"
+        ).fetchone()
+        if not hash_version:
+            rows = db.execute(
+                """SELECT ticket_id, local_date, channel, sent_at, sender, agent_id, agent_name,
+                          ticket_stage, ticket_created_time, ticket_closed_time, synced_at
+                   FROM bik_conversations"""
+            ).fetchall()
+            if rows:
+                db.execute("""CREATE TABLE bik_conversations_v2 (
+                    record_hash TEXT PRIMARY KEY, ticket_id TEXT, local_date TEXT NOT NULL,
+                    channel TEXT, sent_at TEXT, sender TEXT, agent_id TEXT, agent_name TEXT,
+                    ticket_stage TEXT, ticket_created_time TEXT, ticket_closed_time TEXT,
+                    synced_at TEXT NOT NULL)""")
+                values = []
+                for row in rows:
+                    stable = {key: row[key] for key in (
+                        "ticket_id", "local_date", "channel", "sent_at", "sender",
+                        "agent_id", "agent_name", "ticket_created_time",
+                    )}
+                    values.append((_row_hash(stable), *tuple(row)))
+                db.executemany(
+                    "INSERT OR REPLACE INTO bik_conversations_v2 VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                    values,
+                )
+                db.execute("DROP TABLE bik_conversations")
+                db.execute("ALTER TABLE bik_conversations_v2 RENAME TO bik_conversations")
+                db.execute("CREATE INDEX idx_bik_conversations_date_channel ON bik_conversations(local_date, channel)")
+            db.execute(
+                "INSERT INTO schema_meta (key, value) VALUES ('bik_conversation_hash_version', '2')"
+            )
         db.execute("PRAGMA optimize")
 
 
@@ -460,12 +497,21 @@ def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
 
 def save_bik_conversations(rows, local_date, row_offset=0):
     now = utc_now()
-    values = [(
-        _row_hash({"row": row}),
-        row.get("Ticket ID"), _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date), row.get("Channel"), row.get("Sent At"),
-        row.get("Sender"), row.get("Agent ID"), row.get("Agent Name"), row.get("Ticket Stage"),
-        row.get("Ticket Creation Timestamp"), row.get("Ticket Closed Timestamp"), now,
-    ) for index, row in enumerate(rows, start=row_offset)]
+    values = []
+    for row in rows:
+        row_date = _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date)
+        stable = {
+            "ticket_id": row.get("Ticket ID"), "local_date": row_date,
+            "channel": row.get("Channel"), "sent_at": row.get("Sent At"),
+            "sender": row.get("Sender"), "agent_id": row.get("Agent ID"),
+            "agent_name": row.get("Agent Name"),
+            "ticket_created_time": row.get("Ticket Creation Timestamp"),
+        }
+        values.append((
+            _row_hash(stable), row.get("Ticket ID"), row_date, row.get("Channel"), row.get("Sent At"),
+            row.get("Sender"), row.get("Agent ID"), row.get("Agent Name"), row.get("Ticket Stage"),
+            row.get("Ticket Creation Timestamp"), row.get("Ticket Closed Timestamp"), now,
+        ))
     with db_connection() as db:
         db.executemany(
             """INSERT INTO bik_conversations VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
