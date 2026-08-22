@@ -403,6 +403,7 @@ def dashboard_data(department=None, year=None, agent_emp_id=None):
         by_agent.setdefault(card["employee_name"], []).append(card["score_pct"])
     averages = [(name, round(sum(values) / len(values), 1)) for name, values in by_agent.items()]
     averages.sort(key=lambda item: item[1], reverse=True)
+    needs_attention = min(averages, key=lambda item: (item[1], item[0].casefold())) if averages else None
     tiers = {"On track": 0, "Needs focus": 0, "At risk": 0, "No data": 0}
     for agent in agents:
         values = [card["score_pct"] for card in completed if card["agent_id"] == agent["id"]]
@@ -413,7 +414,7 @@ def dashboard_data(department=None, year=None, agent_emp_id=None):
     return {
         "total_agents": len([agent for agent in agents if agent["active"]]),
         "total_scorecards": len(cards), "top_performer": averages[0] if averages else None,
-        "needs_attention": averages[-1] if averages else None, "tiers": tiers,
+        "needs_attention": needs_attention, "tiers": tiers,
         "recent": cards[:8], "departments": sorted({agent["department"] for agent in agents}),
         "years": sorted({card["evaluation_date"][:4] for card in list_scorecards()}, reverse=True),
         "agents": agents,
