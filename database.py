@@ -11,6 +11,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("CRM_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "crm.db"
+PRIMARY_ADMIN_EMAIL = "varun.c@wellbeingnutrition.com"
 
 
 def utc_now():
@@ -145,6 +146,25 @@ def init_db():
                 synced_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS portal_users (
+                email TEXT PRIMARY KEY,
+                display_name TEXT,
+                role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+                active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS portal_permissions (
+                email TEXT NOT NULL,
+                permission_key TEXT NOT NULL,
+                granted_by TEXT NOT NULL,
+                granted_at TEXT NOT NULL,
+                PRIMARY KEY (email, permission_key),
+                FOREIGN KEY (email) REFERENCES portal_users(email) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_zoho_tickets_department_date
                 ON zoho_tickets(department_id, created_local_date);
             CREATE INDEX IF NOT EXISTS idx_zoho_tickets_date_channel
@@ -159,7 +179,79 @@ def init_db():
                 ON bik_conversations(local_date, channel);
             """
         )
+        now = utc_now()
+        db.execute(
+            """INSERT INTO portal_users
+               (email, display_name, role, active, created_by, created_at, updated_at)
+               VALUES (?, 'Varun', 'admin', 1, 'system', ?, ?)
+               ON CONFLICT(email) DO UPDATE SET role='admin', active=1, updated_at=excluded.updated_at""",
+            (PRIMARY_ADMIN_EMAIL, now, now),
+        )
         db.execute("PRAGMA optimize")
+
+
+def get_portal_user(email):
+    normalized = (email or "").strip().lower()
+    if not normalized:
+        return None
+    with db_connection() as db:
+        row = db.execute(
+            "SELECT email, display_name, role, active, created_by, created_at, updated_at FROM portal_users WHERE email=?",
+            (normalized,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_portal_users():
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT email, display_name, role, active, created_by, created_at, updated_at
+               FROM portal_users ORDER BY CASE WHEN email=? THEN 0 ELSE 1 END, role, email""",
+            (PRIMARY_ADMIN_EMAIL,),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def save_portal_user(email, display_name, role, active, created_by):
+    normalized = (email or "").strip().lower()
+    if normalized == PRIMARY_ADMIN_EMAIL:
+        role, active = "admin", True
+    if role not in {"admin", "user"}:
+        raise ValueError("Invalid portal role")
+    now = utc_now()
+    with db_connection() as db:
+        db.execute(
+            """INSERT INTO portal_users
+               (email, display_name, role, active, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(email) DO UPDATE SET
+                 display_name=excluded.display_name, role=excluded.role,
+                 active=excluded.active, updated_at=excluded.updated_at""",
+            (normalized, (display_name or "").strip(), role, int(bool(active)), created_by, now, now),
+        )
+    return get_portal_user(normalized)
+
+
+def get_portal_permissions(email):
+    with db_connection() as db:
+        rows = db.execute(
+            "SELECT permission_key FROM portal_permissions WHERE email=? ORDER BY permission_key",
+            ((email or "").strip().lower(),),
+        ).fetchall()
+    return [row["permission_key"] for row in rows]
+
+
+def set_portal_permissions(email, permission_keys, granted_by):
+    normalized = (email or "").strip().lower()
+    now = utc_now()
+    keys = sorted(set(permission_keys))
+    with db_connection() as db:
+        db.execute("DELETE FROM portal_permissions WHERE email=?", (normalized,))
+        db.executemany(
+            "INSERT INTO portal_permissions (email, permission_key, granted_by, granted_at) VALUES (?, ?, ?, ?)",
+            [(normalized, key, granted_by, now) for key in keys],
+        )
+    return keys
 
 
 def start_sync_run(source, report_key, start_date, end_date):
@@ -437,4 +529,34 @@ def bik_metrics(start_date, end_date):
         "channels": [dict(row) for row in channels],
         "statuses": [dict(row) for row in stages],
         "recent": [dict(row) for row in recent],
+    }
+
+
+def bik_conversation_metrics(start_date, end_date):
+    params = (start_date, end_date)
+    with db_connection() as db:
+        summary = db.execute(
+            """SELECT COUNT(*) messages, COUNT(DISTINCT ticket_id) conversations,
+                      COUNT(DISTINCT CASE WHEN COALESCE(agent_id,'')<>'' THEN agent_id END) agents
+               FROM bik_conversations WHERE local_date BETWEEN ? AND ?""",
+            params,
+        ).fetchone()
+        channels = db.execute(
+            """SELECT COALESCE(channel,'Unknown') label, COUNT(*) value
+               FROM bik_conversations WHERE local_date BETWEEN ? AND ?
+               GROUP BY channel ORDER BY value DESC""",
+            params,
+        ).fetchall()
+        stages = db.execute(
+            """SELECT COALESCE(ticket_stage,'Unknown') label, COUNT(*) value
+               FROM bik_conversations WHERE local_date BETWEEN ? AND ?
+               GROUP BY ticket_stage ORDER BY value DESC""",
+            params,
+        ).fetchall()
+    return {
+        "total": summary["messages"] or 0, "messages": summary["messages"] or 0,
+        "conversations": summary["conversations"] or 0, "agents": summary["agents"] or 0,
+        "resolved": 0, "open": 0, "resolution_rate": 0, "csat_score": 0,
+        "csat_responses": 0, "channels": [dict(row) for row in channels],
+        "statuses": [dict(row) for row in stages], "recent": [],
     }

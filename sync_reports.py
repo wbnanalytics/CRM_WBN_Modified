@@ -1,10 +1,21 @@
 import argparse
+import time
 from datetime import date, timedelta
 
 from dotenv import load_dotenv
 
 from database import init_db
 from report_services import sync_bik, sync_zoho
+
+
+def with_retries(operation, *args, attempts=3):
+    for attempt in range(1, attempts + 1):
+        try:
+            return operation(*args)
+        except Exception:
+            if attempt == attempts:
+                raise
+            time.sleep(5 * attempt)
 
 
 def main():
@@ -30,8 +41,8 @@ def main():
     if args.source in ("all", "zoho"):
         print("Zoho:", sync_zoho(start_day, end_day))
     if args.source in ("all", "bik"):
-        print("BIK customer tickets:", sync_bik("customer_tickets", start_day, end_day))
-        print("BIK conversations:", sync_bik("all_conversations", start_day, end_day))
+        print("BIK customer tickets:", with_retries(sync_bik, "customer_tickets", start_day, end_day))
+        print("BIK conversations:", with_retries(sync_bik, "all_conversations", start_day, end_day))
 
 
 if __name__ == "__main__":

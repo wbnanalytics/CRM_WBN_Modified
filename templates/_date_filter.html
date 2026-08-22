@@ -1,5 +1,6 @@
 <form class="date-filter" method="get" data-date-filter>
   {% if source_key == 'zoho' %}<input type="hidden" name="department" value="{{ department_key }}">{% endif %}
+  {% if source_key == 'bik' %}<input type="hidden" name="report" value="{{ bik_report }}">{% endif %}
   <label>
     <span>Period</span>
     <select name="preset" data-preset>

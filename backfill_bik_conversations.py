@@ -1,4 +1,5 @@
 import argparse
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 
@@ -6,6 +7,18 @@ from dotenv import load_dotenv
 
 from database import init_db
 from report_services import sync_bik
+
+
+def sync_range(first, last, attempts=4):
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return sync_bik("all_conversations", first, last)
+        except Exception as exc:
+            last_error = exc
+            if attempt < attempts:
+                time.sleep(5 * attempt)
+    raise last_error
 
 
 def weekly_ranges(start, end):
@@ -30,7 +43,7 @@ def main():
     ranges = list(weekly_ranges(start, end))
     failures = []
     with ThreadPoolExecutor(max_workers=max(1, min(args.workers, 4))) as pool:
-        futures = {pool.submit(sync_bik, "all_conversations", first, last): (first, last) for first, last in ranges}
+        futures = {pool.submit(sync_range, first, last): (first, last) for first, last in ranges}
         for future in as_completed(futures):
             first, last = futures[future]
             try:

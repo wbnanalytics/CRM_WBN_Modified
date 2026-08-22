@@ -1,0 +1,39 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page user-management-page">
+  <div class="page-heading">
+    <div><span class="eyebrow">ADMINISTRATION</span><h1>User Management</h1><p>Control who can sign in with their Wellbeing Nutrition Microsoft account.</p></div>
+  </div>
+
+  <div class="user-admin-grid">
+    <section class="content-card add-user-card">
+      <span class="eyebrow">ADD ACCESS</span><h2>Add a user or admin</h2>
+      <form method="post" class="user-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>Work email<input type="email" name="email" placeholder="name@wellbeingnutrition.com" pattern=".+@wellbeingnutrition\.com" required></label>
+        <label>Display name<input type="text" name="display_name" placeholder="Full name"></label>
+        <label>Access level<select name="role"><option value="user">User</option>{% if is_super_admin %}<option value="admin">Admin</option>{% endif %}</select></label>
+        <fieldset class="permission-fieldset"><legend>Module &amp; submodule access</legend>{% for key, label, description in permission_options %}<label class="permission-check"><input type="checkbox" name="permissions" value="{{ key }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</fieldset>
+        <button class="primary-button" type="submit">Save access</button>
+      </form>
+    </section>
+
+    <section class="content-card user-list-card">
+      <div class="card-title-row"><div><span class="eyebrow">PORTAL ACCESS</span><h2>{{ users|length }} accounts</h2></div></div>
+      <div class="user-table-wrap"><table class="user-table"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      {% for user in users %}<tr>
+        <td><strong>{{ user.display_name or user.email.split('@')[0] }}</strong><span>{{ user.email }}</span>{% if user.email == primary_admin %}<small>Primary admin</small>{% endif %}</td>
+        <td><span class="role-pill {{ user.role }}">{{ user.role|title }}</span></td>
+        <td><span class="status-pill {{ 'active' if user.active else 'inactive' }}">{{ 'Active' if user.active else 'Inactive' }}</span></td>
+        <td>{% if user.email == primary_admin %}<span class="locked-label">Protected</span>{% elif user.role == 'admin' and not is_super_admin %}<span class="locked-label">Super Admin only</span>{% else %}<details class="access-editor"><summary>Manage</summary><form method="post" action="{{ url_for('update_user') }}" class="inline-user-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="email" value="{{ user.email }}">
+          <select name="role" aria-label="Role for {{ user.email }}"><option value="user" {{ 'selected' if user.role == 'user' }}>User</option>{% if is_super_admin %}<option value="admin" {{ 'selected' if user.role == 'admin' }}>Admin</option>{% endif %}</select>
+          {% if user.role == 'user' %}<div class="compact-permissions">{% for key, label, description in permission_options %}<label><input type="checkbox" name="permissions" value="{{ key }}" {{ 'checked' if key in user.permissions }}>{{ label }}</label>{% endfor %}</div>{% endif %}
+          <label class="active-toggle"><input type="checkbox" name="active" value="1" {{ 'checked' if user.active }}>Active</label><button type="submit" class="table-action">Save</button>
+        </form></details>{% endif %}</td>
+      </tr>{% endfor %}
+      </tbody></table></div>
+    </section>
+  </div>
+</section>
+{% endblock %}
