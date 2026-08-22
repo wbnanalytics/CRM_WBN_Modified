@@ -8,13 +8,16 @@ from zoneinfo import ZoneInfo
 import requests
 import msal
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, jsonify, redirect, render_template, request, session, url_for
+from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, get_portal_permissions, get_portal_user, init_db,
     list_portal_users, recent_sync_runs, save_portal_user, set_portal_permissions, zoho_metrics,
 )
 from report_services import ZOHO_DEPARTMENTS
+import scorecard_service as scorecards
+from scorecard_export import appraisal_excel, scorecard_excel
+from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 
 
 load_dotenv()
@@ -47,7 +50,12 @@ PORTAL_PERMISSIONS = (
     ("zoho.customer_escalation", "Zoho · Customer Escalation", "Escalation queue tickets"),
     ("bik.customer_tickets", "BIK · Customer Tickets", "Ticket performance and service metrics"),
     ("bik.all_conversations", "BIK · All Conversations", "Conversation and message metrics"),
-    ("scorecard", "Scorecard", "Performance scorecards when launched"),
+    ("scorecard.view", "Scorecard · Dashboard", "Scorecard overview and performance trends"),
+    ("scorecard.agents", "Scorecard · Agents", "Create and maintain the agent directory"),
+    ("scorecard.scorecards", "Scorecard · Scorecards", "Create, score and export monthly scorecards"),
+    ("scorecard.templates", "Scorecard · KPI Templates", "Configure department KPI grids and zero-score rules"),
+    ("scorecard.appraisals", "Scorecard · Appraisals", "Create and export annual appraisals"),
+    ("scorecard.email", "Scorecard · Send Email", "Email finalized scorecards and appraisals"),
 )
 VALID_PERMISSION_KEYS = {item[0] for item in PORTAL_PERMISSIONS}
 
@@ -142,7 +150,14 @@ def is_super_admin():
 
 def can_access(permission_key):
     user = session.get("user", {})
-    return user.get("role") == "admin" or permission_key in user.get("permissions", [])
+    permissions = user.get("permissions", [])
+    return user.get("role") == "admin" or permission_key in permissions or (
+        permission_key.startswith("scorecard.") and "scorecard" in permissions
+    )
+
+
+def can_access_scorecard():
+    return any(can_access(key) for key, _, _ in PORTAL_PERMISSIONS if key.startswith("scorecard."))
 
 
 def permission_required(permission_key):
@@ -164,6 +179,12 @@ def csrf_token():
 
 def require_csrf():
     if not secrets.compare_digest(request.form.get("csrf_token", ""), session.get("csrf_token", "")):
+        abort(400)
+
+
+def require_json_csrf():
+    supplied = request.headers.get("X-CSRF-Token", "")
+    if not secrets.compare_digest(supplied, session.get("csrf_token", "")):
         abort(400)
 
 
@@ -215,6 +236,7 @@ def inject_globals():
         "is_admin": session.get("user", {}).get("role") == "admin",
         "is_super_admin": is_super_admin(),
         "can_access": can_access,
+        "can_access_scorecard": can_access_scorecard,
         "csrf_token": csrf_token,
     }
 
@@ -228,7 +250,7 @@ def index():
             return redirect(url_for("zoho"))
         if can_access("bik.customer_tickets") or can_access("bik.all_conversations"):
             return redirect(url_for("bik"))
-        if can_access("scorecard"):
+        if can_access_scorecard():
             return redirect(url_for("scorecard"))
         if session.get("user", {}).get("role") == "admin":
             return redirect(url_for("manage_users"))
@@ -299,9 +321,202 @@ def bik():
 
 
 @app.route("/scorecard")
-@permission_required("scorecard")
 def scorecard():
-    return render_template("coming_soon.html", active_page="scorecard", page_title="Scorecard")
+    if not can_access_scorecard():
+        abort(403)
+    return render_template(
+        "scorecard.html", active_page="scorecard", page_title="Scorecard",
+        agents=scorecards.list_agents(), templates=scorecards.list_templates(),
+        scorecard_rows=scorecards.list_scorecards(), appraisals=scorecards.list_appraisals(),
+        dashboard=scorecards.dashboard_data(), email_configured=scorecard_email_ready(),
+    )
+
+
+def scorecard_access_required(permission):
+    return permission_required(f"scorecard.{permission}")
+
+
+@app.route("/api/scorecard/agents", methods=["GET", "POST"])
+@scorecard_access_required("agents")
+def scorecard_agents_api():
+    if request.method == "GET":
+        return jsonify(scorecards.list_agents())
+    require_json_csrf()
+    try:
+        return jsonify({"id": scorecards.save_agent(request.get_json() or {}, session["user"]["email"])}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/agents/<int:agent_id>", methods=["PUT", "DELETE"])
+@scorecard_access_required("agents")
+def scorecard_agent_api(agent_id):
+    require_json_csrf()
+    try:
+        if request.method == "DELETE":
+            scorecards.delete_agent(agent_id)
+        else:
+            scorecards.save_agent(request.get_json() or {}, session["user"]["email"], agent_id)
+        return jsonify({"success": True})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/agents/<int:agent_id>/toggle", methods=["POST"])
+@scorecard_access_required("agents")
+def scorecard_agent_toggle_api(agent_id):
+    require_json_csrf()
+    scorecards.toggle_agent(agent_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/scorecard/templates", methods=["GET", "POST"])
+@scorecard_access_required("templates")
+def scorecard_templates_api():
+    if request.method == "GET":
+        return jsonify(scorecards.list_templates())
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        template_id = scorecards.save_template(
+            body.get("department"), body.get("name"), body.get("zero_score_conditions") or [],
+            body.get("metrics") or [], session["user"]["email"],
+        )
+        return jsonify({"id": template_id}), 201
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/templates/<path:department>", methods=["GET", "PUT"])
+@scorecard_access_required("templates")
+def scorecard_template_api(department):
+    if request.method == "GET":
+        template = scorecards.get_template(department)
+        return (jsonify(template), 200) if template else (jsonify({"error": "Template not found"}), 404)
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        scorecards.save_template(
+            department, body.get("name"), body.get("zero_score_conditions") or [],
+            body.get("metrics") or [], session["user"]["email"],
+        )
+        return jsonify({"success": True})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/scorecards", methods=["GET", "POST"])
+@scorecard_access_required("scorecards")
+def scorecard_records_api():
+    if request.method == "GET":
+        return jsonify(scorecards.list_scorecards())
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        record_id = scorecards.create_scorecard(
+            (body.get("emp_id") or "").strip().upper(), body.get("evaluation_date"), session["user"]["email"],
+        )
+        return jsonify({"id": record_id}), 201
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/scorecards/<int:record_id>", methods=["GET", "PUT", "DELETE"])
+@scorecard_access_required("scorecards")
+def scorecard_record_api(record_id):
+    if request.method == "GET":
+        record = scorecards.get_scorecard(record_id)
+        return (jsonify(record), 200) if record else (jsonify({"error": "Scorecard not found"}), 404)
+    require_json_csrf()
+    try:
+        if request.method == "DELETE":
+            scorecards.delete_scorecard(record_id)
+        else:
+            scorecards.update_scorecard(record_id, request.get_json() or {})
+        return jsonify({"success": True})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/scorecard/scorecards/<int:record_id>/excel")
+@scorecard_access_required("scorecards")
+def scorecard_record_excel(record_id):
+    record = scorecards.get_scorecard(record_id)
+    if not record:
+        abort(404)
+    return send_file(
+        scorecard_excel(record), as_attachment=True,
+        download_name=f"scorecard-{record['emp_id']}-{record['evaluation_date']}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/api/scorecard/appraisals", methods=["GET", "POST"])
+@scorecard_access_required("appraisals")
+def scorecard_appraisals_api():
+    if request.method == "GET":
+        return jsonify(scorecards.list_appraisals())
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        record_id = scorecards.create_appraisal(
+            (body.get("emp_id") or "").strip().upper(), body.get("review_date"),
+            body.get("period_label"), session["user"]["email"],
+        )
+        return jsonify({"id": record_id}), 201
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/scorecard/appraisals/<int:record_id>", methods=["GET", "PUT", "DELETE"])
+@scorecard_access_required("appraisals")
+def scorecard_appraisal_api(record_id):
+    if request.method == "GET":
+        record = scorecards.get_appraisal(record_id)
+        return (jsonify(record), 200) if record else (jsonify({"error": "Appraisal not found"}), 404)
+    require_json_csrf()
+    try:
+        if request.method == "DELETE":
+            scorecards.delete_appraisal(record_id)
+        else:
+            scorecards.update_appraisal(record_id, request.get_json() or {})
+        return jsonify({"success": True})
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/scorecard/appraisals/<int:record_id>/excel")
+@scorecard_access_required("appraisals")
+def scorecard_appraisal_excel(record_id):
+    record = scorecards.get_appraisal(record_id)
+    if not record:
+        abort(404)
+    return send_file(
+        appraisal_excel(record), as_attachment=True,
+        download_name=f"appraisal-{record['emp_id']}-{record['review_date']}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/api/scorecard/<record_type>/<int:record_id>/email", methods=["POST"])
+@scorecard_access_required("email")
+def scorecard_email_api(record_type, record_id):
+    if record_type not in {"scorecard", "appraisal"}:
+        abort(404)
+    require_json_csrf()
+    record = scorecards.get_scorecard(record_id) if record_type == "scorecard" else scorecards.get_appraisal(record_id)
+    if not record:
+        abort(404)
+    if record["status"] == "draft":
+        return jsonify({"error": "Finalize the record before sending it"}), 400
+    recipient = ((request.get_json() or {}).get("recipient") or record["employee_email"]).strip().lower()
+    try:
+        send_record_email(record_type, record, recipient)
+        scorecards.log_email(record_type, record_id, recipient, session["user"]["email"], "sent")
+        return jsonify({"success": True, "message": f"Email sent to {recipient}"})
+    except Exception as exc:
+        scorecards.log_email(record_type, record_id, recipient, session["user"]["email"], "failed", str(exc))
+        return jsonify({"error": str(exc)}), 503
 
 
 @app.route("/admin/users", methods=["GET", "POST"])

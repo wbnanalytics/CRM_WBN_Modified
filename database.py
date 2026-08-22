@@ -165,6 +165,133 @@ def init_db():
                 FOREIGN KEY (email) REFERENCES portal_users(email) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS crm_agents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                emp_id TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                email TEXT NOT NULL UNIQUE,
+                department TEXT NOT NULL,
+                start_date TEXT NOT NULL,
+                active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_kpi_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                department TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                zero_score_conditions TEXT NOT NULL DEFAULT '[]',
+                active INTEGER NOT NULL DEFAULT 1,
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_kpi_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_id INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                kpi TEXT NOT NULL,
+                grid_scoring TEXT,
+                kra TEXT,
+                weightage REAL NOT NULL DEFAULT 0,
+                max_points REAL NOT NULL DEFAULT 0,
+                scoring_rules TEXT NOT NULL DEFAULT '[]',
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (template_id) REFERENCES crm_kpi_templates(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_scorecards (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id INTEGER NOT NULL,
+                template_id INTEGER NOT NULL,
+                evaluation_date TEXT NOT NULL,
+                positive_feedback TEXT,
+                area_of_development TEXT,
+                zero_score_triggered INTEGER NOT NULL DEFAULT 0,
+                total_points REAL NOT NULL DEFAULT 0,
+                max_points REAL NOT NULL DEFAULT 0,
+                score_pct REAL NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','finalized','emailed')),
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                finalized_at TEXT,
+                emailed_at TEXT,
+                emailed_by TEXT,
+                FOREIGN KEY (agent_id) REFERENCES crm_agents(id),
+                FOREIGN KEY (template_id) REFERENCES crm_kpi_templates(id),
+                UNIQUE (agent_id, evaluation_date)
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_scorecard_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                scorecard_id INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                kpi TEXT NOT NULL,
+                grid_scoring TEXT,
+                kra TEXT,
+                weightage REAL NOT NULL DEFAULT 0,
+                max_points REAL NOT NULL DEFAULT 0,
+                scoring_rules TEXT NOT NULL DEFAULT '[]',
+                achieved REAL,
+                target REAL,
+                score_ratio REAL,
+                final_points REAL NOT NULL DEFAULT 0,
+                manager_remarks TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (scorecard_id) REFERENCES crm_scorecards(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_appraisals (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                agent_id INTEGER NOT NULL,
+                period_label TEXT NOT NULL,
+                review_date TEXT NOT NULL,
+                kpi_rating_5 REAL,
+                behaviour_rating_5 REAL,
+                total_rating_10 REAL,
+                strengths TEXT,
+                improvements TEXT,
+                learning_requirements TEXT,
+                overall_band TEXT,
+                increment_pct REAL,
+                promotion_recommendation TEXT,
+                status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','finalized','emailed')),
+                created_by TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                emailed_at TEXT,
+                emailed_by TEXT,
+                FOREIGN KEY (agent_id) REFERENCES crm_agents(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_appraisal_rows (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                appraisal_id INTEGER NOT NULL,
+                section TEXT NOT NULL,
+                criteria TEXT NOT NULL,
+                guidance TEXT,
+                weightage REAL NOT NULL,
+                rating REAL,
+                comments TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (appraisal_id) REFERENCES crm_appraisals(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS crm_scorecard_email_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_type TEXT NOT NULL CHECK (record_type IN ('scorecard','appraisal')),
+                record_id INTEGER NOT NULL,
+                recipient TEXT NOT NULL,
+                sent_by TEXT NOT NULL,
+                status TEXT NOT NULL,
+                error_message TEXT,
+                created_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS schema_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
@@ -182,6 +309,10 @@ def init_db():
                 ON bik_tickets(local_date, channel);
             CREATE INDEX IF NOT EXISTS idx_bik_conversations_date_channel
                 ON bik_conversations(local_date, channel);
+            CREATE INDEX IF NOT EXISTS idx_crm_scorecards_agent_date
+                ON crm_scorecards(agent_id, evaluation_date DESC);
+            CREATE INDEX IF NOT EXISTS idx_crm_appraisals_agent_date
+                ON crm_appraisals(agent_id, review_date DESC);
             """
         )
         now = utc_now()

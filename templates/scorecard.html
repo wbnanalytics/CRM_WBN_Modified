@@ -1,0 +1,88 @@
+{% extends "layout.html" %}
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<section class="scorecard-page">
+  <div class="page-heading scorecard-heading">
+    <div><span class="eyebrow">PERFORMANCE</span><h1>CRM Scorecard</h1><p>Agent KPIs, monthly scorecards and annual appraisals in one workspace.</p></div>
+    <span class="status large {{ 'configured' if email_configured else 'needs_setup' }}"><i></i>{{ 'Email ready' if email_configured else 'Email setup pending' }}</span>
+  </div>
+
+  <nav class="scorecard-tabs" aria-label="Scorecard sections">
+    {% if can_access('scorecard.view') %}<button class="active" data-score-tab="dashboard">Dashboard</button>{% endif %}
+    {% if can_access('scorecard.agents') %}<button data-score-tab="agents">Agents</button>{% endif %}
+    {% if can_access('scorecard.scorecards') %}<button data-score-tab="scorecards">Scorecards</button>{% endif %}
+    {% if can_access('scorecard.templates') %}<button data-score-tab="templates">KPI Templates</button>{% endif %}
+    {% if can_access('scorecard.appraisals') %}<button data-score-tab="appraisals">Appraisals</button>{% endif %}
+  </nav>
+
+  {% if can_access('scorecard.view') %}
+  <section class="score-tab active" data-score-panel="dashboard">
+    <div class="metric-grid">
+      <article class="metric-card featured"><div class="metric-top">Total agents<span class="trend neutral">ACTIVE</span></div><strong>{{ dashboard.total_agents }}</strong><p>People in the scorecard directory</p></article>
+      <article class="metric-card"><div class="metric-top">Total scorecards<span class="metric-symbol sage">✓</span></div><strong>{{ dashboard.total_scorecards }}</strong><p>All evaluation periods</p></article>
+      <article class="metric-card"><div class="metric-top">Top performer<span class="metric-symbol blue">★</span></div><strong class="scorecard-person">{{ dashboard.top_performer[0] if dashboard.top_performer else '—' }}</strong><p>{{ (dashboard.top_performer[1] ~ '%') if dashboard.top_performer else 'No finalized scorecards' }}</p></article>
+      <article class="metric-card"><div class="metric-top">Needs attention<span class="metric-symbol amber">!</span></div><strong class="scorecard-person">{{ dashboard.needs_attention[0] if dashboard.needs_attention else '—' }}</strong><p>{{ (dashboard.needs_attention[1] ~ '%') if dashboard.needs_attention else 'No finalized scorecards' }}</p></article>
+    </div>
+    <div class="dashboard-grid">
+      <section class="panel"><div class="panel-head"><div><span class="eyebrow">PERFORMANCE</span><h2>Performance distribution</h2></div></div>
+        <div class="tier-grid">{% for label, value in dashboard.tiers.items() %}<div><span>{{ label }}</span><strong>{{ value }}</strong><i class="tier-{{ loop.index }}"></i></div>{% endfor %}</div>
+      </section>
+      <section class="panel"><div class="panel-head"><div><span class="eyebrow">LATEST</span><h2>Recent scorecards</h2></div></div>
+        <div class="compact-list">{% for row in dashboard.recent %}{% if can_access('scorecard.scorecards') %}<button data-open-scorecard="{{ row.id }}">{% else %}<div class="compact-score-row">{% endif %}<span><strong>{{ row.employee_name }}</strong><small>{{ row.department }} · {{ row.evaluation_date }}</small></span><b>{{ row.score_pct }}%</b>{% if can_access('scorecard.scorecards') %}</button>{% else %}</div>{% endif %}{% else %}<p class="empty-copy">No scorecards yet.</p>{% endfor %}</div>
+      </section>
+    </div>
+  </section>
+  {% endif %}
+
+  {% if can_access('scorecard.agents') %}
+  <section class="score-tab" data-score-panel="agents">
+    <div class="score-section-head"><div><span class="eyebrow">DIRECTORY</span><h2>Agents</h2></div><button class="primary-button" data-open-dialog="agentDialog">+ Add agent</button></div>
+    <section class="panel table-wrap"><table><thead><tr><th>Employee ID</th><th>Name</th><th>Email</th><th>Department</th><th>Start date</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      {% for agent in agents %}<tr><td><strong>{{ agent.emp_id }}</strong></td><td>{{ agent.name }}</td><td>{{ agent.email }}</td><td>{{ agent.department }}</td><td>{{ agent.start_date }}</td><td><span class="status-pill {{ 'active' if agent.active else 'inactive' }}">{{ 'Active' if agent.active else 'Inactive' }}</span></td><td><button class="text-button" data-edit-agent='{{ agent|tojson }}'>Edit</button> · <button class="text-button" data-toggle-agent="{{ agent.id }}">{{ 'Deactivate' if agent.active else 'Activate' }}</button></td></tr>{% else %}<tr><td colspan="7" class="empty-copy">Add the first agent to begin.</td></tr>{% endfor %}
+    </tbody></table></section>
+  </section>
+  {% endif %}
+
+  {% if can_access('scorecard.scorecards') %}
+  <section class="score-tab" data-score-panel="scorecards">
+    <div class="score-section-head"><div><span class="eyebrow">MONTHLY PERFORMANCE</span><h2>Scorecards</h2></div><button class="primary-button" data-open-dialog="newScorecardDialog">+ New scorecard</button></div>
+    <section class="panel table-wrap"><table><thead><tr><th>Agent</th><th>Department</th><th>Evaluation date</th><th>Score</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      {% for row in scorecard_rows %}<tr><td><strong>{{ row.employee_name }}</strong><br><small>{{ row.emp_id }}</small></td><td>{{ row.department }}</td><td>{{ row.evaluation_date }}</td><td><strong>{{ row.score_pct }}%</strong></td><td><span class="status-pill {{ row.status }}">{{ row.status|title }}</span></td><td><button class="text-button" data-open-scorecard="{{ row.id }}">Open</button> · <a href="{{ url_for('scorecard_record_excel', record_id=row.id) }}">Excel</a></td></tr>{% else %}<tr><td colspan="6" class="empty-copy">No scorecards yet.</td></tr>{% endfor %}
+    </tbody></table></section>
+  </section>
+  {% endif %}
+
+  {% if can_access('scorecard.templates') %}
+  <section class="score-tab" data-score-panel="templates">
+    <div class="score-section-head"><div><span class="eyebrow">SCORING RULES</span><h2>KPI Templates</h2></div><button class="primary-button" id="newTemplateButton">+ New template</button></div>
+    <div class="template-card-grid">{% for template in templates %}<button class="panel template-card" data-edit-template="{{ template.department }}"><span class="source-icon future">{{ template.department[:1] }}</span><strong>{{ template.department }}</strong><small>{{ template.name }}</small><b>{{ template.metric_count }} KPIs · {{ template.total_points|round(1) }} pts</b></button>{% else %}<section class="panel empty-template"><h3>No templates yet</h3><p>Create one template per department before making scorecards.</p></section>{% endfor %}</div>
+  </section>
+  {% endif %}
+
+  {% if can_access('scorecard.appraisals') %}
+  <section class="score-tab" data-score-panel="appraisals">
+    <div class="score-section-head"><div><span class="eyebrow">ANNUAL REVIEW</span><h2>Appraisals</h2></div><button class="primary-button" data-open-dialog="newAppraisalDialog">+ New appraisal</button></div>
+    <section class="panel table-wrap"><table><thead><tr><th>Agent</th><th>Period</th><th>Review date</th><th>KPI /5</th><th>Behaviour /5</th><th>Total /10</th><th>Band</th><th>Actions</th></tr></thead><tbody>
+      {% for row in appraisals %}<tr><td><strong>{{ row.employee_name }}</strong></td><td>{{ row.period_label }}</td><td>{{ row.review_date }}</td><td>{{ row.kpi_rating_5 if row.kpi_rating_5 is not none else '—' }}</td><td>{{ row.behaviour_rating_5 if row.behaviour_rating_5 is not none else '—' }}</td><td><strong>{{ row.total_rating_10 if row.total_rating_10 is not none else '—' }}</strong></td><td>{{ row.overall_band or '—' }}</td><td><button class="text-button" data-open-appraisal="{{ row.id }}">Open</button> · <a href="{{ url_for('scorecard_appraisal_excel', record_id=row.id) }}">Excel</a></td></tr>{% else %}<tr><td colspan="8" class="empty-copy">No appraisals yet.</td></tr>{% endfor %}
+    </tbody></table></section>
+  </section>
+  {% endif %}
+</section>
+
+<dialog id="agentDialog" class="score-dialog"><form method="dialog" class="dialog-close"><button>×</button></form><form id="agentForm"><input type="hidden" name="id"><span class="eyebrow">AGENT</span><h2>Add or edit agent</h2><div class="form-grid"><label>Employee ID<input name="emp_id" required></label><label>Full name<input name="name" required></label><label class="wide">Work email<input type="email" name="email" required></label><label>Department<input name="department" list="departmentList" required></label><label>Start date<input type="date" name="start_date" required></label><label class="checkbox-label"><input type="checkbox" name="active" checked> Active</label></div><div class="dialog-actions"><button type="button" class="outline-button" data-close-dialog>Cancel</button><button class="primary-button">Save agent</button></div></form></dialog>
+
+<datalist id="agentList">{% for agent in agents if agent.active %}<option value="{{ agent.emp_id }}">{{ agent.name }} — {{ agent.department }}</option>{% endfor %}</datalist>
+<datalist id="departmentList">{% for template in templates %}<option value="{{ template.department }}">{% endfor %}</datalist>
+
+<dialog id="newScorecardDialog" class="score-dialog"><form method="dialog" class="dialog-close"><button>×</button></form><form id="newScorecardForm"><span class="eyebrow">NEW SCORECARD</span><h2>Start an evaluation</h2><label>Agent employee ID<input name="emp_id" list="agentList" required></label><label>Evaluation date<input type="date" name="evaluation_date" value="{{ current_year }}-01-01" required></label><div class="dialog-actions"><button type="button" class="outline-button" data-close-dialog>Cancel</button><button class="primary-button">Open scorecard</button></div></form></dialog>
+
+<dialog id="scorecardDialog" class="score-dialog score-dialog-wide"><form method="dialog" class="dialog-close"><button>×</button></form><form id="scorecardForm"><input type="hidden" name="id"><div class="dialog-title-row"><div><span class="eyebrow">SCORECARD EDITOR</span><h2 id="scorecardTitle">Scorecard</h2><p id="scorecardSubtitle"></p></div><div id="scorecardTotal" class="score-total">0%</div></div><div class="form-grid score-notes"><label>Evaluation date<input type="date" name="evaluation_date"></label><label class="wide">Positive feedback<textarea name="positive"></textarea></label><label class="wide">Area of development<textarea name="development"></textarea></label><label class="checkbox-label danger"><input type="checkbox" name="zero_score_triggered"> Zero score triggered</label></div><div id="zeroConditions" class="zero-conditions"></div><div class="table-wrap"><table class="score-edit-table"><thead><tr><th>Section / KPI</th><th>Grid scoring</th><th>Achieved</th><th>Target</th><th>Points</th><th>Remarks</th></tr></thead><tbody id="scorecardEditorRows"></tbody></table></div><div class="dialog-actions"><a class="outline-button" id="scorecardExcel">Excel</a>{% if can_access('scorecard.email') %}<button type="button" class="outline-button" id="sendScorecardEmail">Send Email</button>{% endif %}<button type="button" class="outline-button" data-save-status="draft">Save draft</button><button class="primary-button" data-save-status="finalized">Finalize</button></div></form></dialog>
+
+<dialog id="templateDialog" class="score-dialog score-dialog-wide"><form method="dialog" class="dialog-close"><button>×</button></form><form id="templateForm"><span class="eyebrow">KPI TEMPLATE</span><h2>Department scoring template</h2><div class="form-grid"><label>Department<input name="department" required></label><label>Template name<input name="name" required></label><label class="wide">Zero-score conditions (one per line)<textarea name="zero_score_conditions"></textarea></label></div><div class="table-wrap"><table><thead><tr><th>Section</th><th>KPI</th><th>Grid scoring</th><th>KRA</th><th>Wt.</th><th>Max pts</th><th></th></tr></thead><tbody id="templateRows"></tbody></table></div><button type="button" class="outline-button" id="addTemplateRow">+ Add row</button><div class="dialog-actions"><button type="button" class="outline-button" data-close-dialog>Cancel</button><button class="primary-button">Save template</button></div></form></dialog>
+
+<dialog id="newAppraisalDialog" class="score-dialog"><form method="dialog" class="dialog-close"><button>×</button></form><form id="newAppraisalForm"><span class="eyebrow">NEW APPRAISAL</span><h2>Start an annual review</h2><label>Agent employee ID<input name="emp_id" list="agentList" required></label><label>Review date<input type="date" name="review_date" required></label><label>Period label<input name="period_label" placeholder="FY 2026–27 Annual Review"></label><div class="dialog-actions"><button type="button" class="outline-button" data-close-dialog>Cancel</button><button class="primary-button">Open appraisal</button></div></form></dialog>
+
+<dialog id="appraisalDialog" class="score-dialog score-dialog-wide"><form method="dialog" class="dialog-close"><button>×</button></form><form id="appraisalForm"><input type="hidden" name="id"><div class="dialog-title-row"><div><span class="eyebrow">APPRAISAL EDITOR</span><h2 id="appraisalTitle">Appraisal</h2><p id="appraisalSubtitle"></p></div><div id="appraisalTotal" class="score-total">— /10</div></div><div class="form-grid"><label>Period label<input name="period_label"></label><label>Review date<input type="date" name="review_date"></label><label>KPI rating /5 (60%)<input type="number" name="kpi_rating_5" min="0" max="5" step=".01"></label><label>Overall band<select name="overall_band"><option value="">—</option><option>BE</option><option>ME1</option><option>ME2</option><option>ME3</option><option>EE</option></select></label><label>Increment %<input type="number" name="increment_pct" step=".01"></label></div><div class="table-wrap"><table><thead><tr><th>Section</th><th>Criteria</th><th>Guidance</th><th>Weight</th><th>Rating 1–5</th><th>Comments</th></tr></thead><tbody id="appraisalEditorRows"></tbody></table></div><div class="form-grid score-notes"><label class="wide">Strengths<textarea name="strengths"></textarea></label><label class="wide">Areas of improvement<textarea name="improvements"></textarea></label><label class="wide">Learning requirements<textarea name="learning"></textarea></label><label class="wide">Promotion recommendation<textarea name="promotion"></textarea></label></div><div class="dialog-actions"><a class="outline-button" id="appraisalExcel">Excel</a>{% if can_access('scorecard.email') %}<button type="button" class="outline-button" id="sendAppraisalEmail">Send Email</button>{% endif %}<button type="button" class="outline-button" data-appraisal-status="draft">Save draft</button><button class="primary-button" data-appraisal-status="finalized">Finalize</button></div></form></dialog>
+
+<script src="{{ url_for('static', filename='scorecard.js') }}" defer></script>
+{% endblock %}
