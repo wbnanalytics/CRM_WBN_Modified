@@ -338,8 +338,10 @@ def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
     values = []
     for index, row in enumerate(rows, start=row_offset):
         row_date = _bik_local_date(row.get("Ticket created timestamp"), local_date)
+        ticket_id = str(row.get("Ticket Id") or "").strip()
+        record_key = {"ticket_id": ticket_id} if ticket_id else {"row": row}
         values.append((
-            _row_hash({"row": row, "position": index, "date": row_date}), row.get("Ticket Id"), row_date, row.get("Channel"),
+            _row_hash(record_key), ticket_id or None, row_date, row.get("Channel"),
             row.get("Ticket stage"), row.get("Agent name"), row.get("Ticket created timestamp"),
             row.get("Ticket assigned timestamp"), row.get("Ticket close timestamp"),
             duration_parser(row.get("Ticket closure time")), duration_parser(row.get("First response time")),
@@ -367,7 +369,7 @@ def save_bik_tickets(rows, local_date, duration_parser, row_offset=0):
 def save_bik_conversations(rows, local_date, row_offset=0):
     now = utc_now()
     values = [(
-        _row_hash({"row": row, "position": index, "date": _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date)}),
+        _row_hash({"row": row}),
         row.get("Ticket ID"), _bik_local_date(row.get("Sent At") or row.get("Ticket Creation Timestamp"), local_date), row.get("Channel"), row.get("Sent At"),
         row.get("Sender"), row.get("Agent ID"), row.get("Agent Name"), row.get("Ticket Stage"),
         row.get("Ticket Creation Timestamp"), row.get("Ticket Closed Timestamp"), now,

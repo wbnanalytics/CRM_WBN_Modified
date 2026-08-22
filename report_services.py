@@ -223,8 +223,8 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
     total = 0
     external_ids = []
     cursor = None
+    cleared = False
     try:
-        clear_bik_report_range(report_key, start_date.isoformat(), end_date.isoformat())
         for _ in range(10):
             generated = generate_bik_report(report_key, start_date, end_date, recipient_email, cursor)
             history_id = (generated.get("data") or {}).get("reportHistoryId")
@@ -232,6 +232,9 @@ def sync_bik(report_key, start_date, end_date, recipient_email=None):
                 raise IntegrationError("BIK did not return a report history ID")
             external_ids.append(str(history_id))
             completed = _poll_bik_report(history_id)
+            if not cleared:
+                clear_bik_report_range(report_key, start_date.isoformat(), end_date.isoformat())
+                cleared = True
             for rows in _download_csv_batches(completed["downloadLink"]):
                 if report_key == "customer_tickets":
                     saved = save_bik_tickets(rows, start_date.isoformat(), parse_duration_seconds, total)
