@@ -1,0 +1,176 @@
+import re
+from calendar import monthrange
+from datetime import date, timedelta
+
+from database import db_connection, utc_now
+
+
+STATUS_LABELS = {
+    "P": "Present",
+    "A": "Absent",
+    "PL": "Planned Leave",
+    "UPL": "Unplanned Leave",
+    "SL": "Sick Leave",
+    "MAT": "Maternity Leave",
+    "PAT": "Paternity Leave",
+    "CO": "Comp Off",
+    "FL": "Floating Leave",
+    "PH": "Public Holiday",
+    "RH": "Restricted Holiday",
+    "BL": "Bereavement Leave",
+    "WO": "Week Off",
+    "WFH": "Work From Home",
+    "Offsite": "Offsite",
+    "HD-PL": "Half-day Planned Leave",
+    "UL": "Unplanned Leave",
+    "NA": "Not Applicable",
+}
+
+PRESENT_CODES = {"P", "WFH", "Offsite"}
+PLANNED_CODES = {"PL", "MAT", "PAT", "CO", "FL", "HD-PL"}
+UNPLANNED_CODES = {"A", "UPL", "SL", "BL", "UL"}
+NON_WORKING_CODES = {"WO", "PH", "RH", "NA"}
+
+
+def employee_key(name):
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+
+
+def import_attendance_snapshot(source_name, employees, records, range_start, range_end, imported_by="system"):
+    now = utc_now()
+    with db_connection() as db:
+        db.executemany(
+            """INSERT INTO attendance_employees
+               (employee_key, source_employee_id, employee_name, role, employment_status,
+                pl_balance, sl_balance, sort_order, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(employee_key) DO UPDATE SET
+                 source_employee_id=excluded.source_employee_id,
+                 employee_name=excluded.employee_name,
+                 role=excluded.role,
+                 employment_status=excluded.employment_status,
+                 pl_balance=excluded.pl_balance,
+                 sl_balance=excluded.sl_balance,
+                 sort_order=excluded.sort_order,
+                 updated_at=excluded.updated_at""",
+            [
+                (
+                    item["employee_key"], item.get("source_employee_id"), item["employee_name"],
+                    item["role"], item["employment_status"], item.get("pl_balance"),
+                    item.get("sl_balance"), item["sort_order"], now,
+                )
+                for item in employees
+            ],
+        )
+        before = db.total_changes
+        db.executemany(
+            """INSERT INTO attendance_records
+               (employee_key, attendance_date, status_code, source, updated_by, updated_at)
+               VALUES (?, ?, ?, 'workbook', ?, ?)
+               ON CONFLICT(employee_key, attendance_date) DO NOTHING""",
+            [(item["employee_key"], item["attendance_date"], item["status_code"], imported_by, now) for item in records],
+        )
+        saved = db.total_changes - before
+        db.execute(
+            """INSERT INTO attendance_imports
+               (source_name, range_start, range_end, employees_imported, records_imported,
+                imported_by, imported_at) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (source_name, range_start, range_end, len(employees), saved, imported_by, now),
+        )
+    return {"employees": len(employees), "records": saved, "range_start": range_start, "range_end": range_end}
+
+
+def latest_attendance_import():
+    with db_connection() as db:
+        row = db.execute("SELECT * FROM attendance_imports ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+def set_attendance(employee, attendance_date, status_code, updated_by):
+    if status_code not in {"P", "A"}:
+        raise ValueError("Attendance can only be marked Present or Absent")
+    date.fromisoformat(attendance_date)
+    now = utc_now()
+    with db_connection() as db:
+        exists = db.execute(
+            "SELECT 1 FROM attendance_employees WHERE employee_key=?", (employee,),
+        ).fetchone()
+        if not exists:
+            raise ValueError("Employee not found")
+        db.execute(
+            """INSERT INTO attendance_records
+               (employee_key, attendance_date, status_code, source, updated_by, updated_at)
+               VALUES (?, ?, ?, 'portal', ?, ?)
+               ON CONFLICT(employee_key, attendance_date) DO UPDATE SET
+                 status_code=excluded.status_code, source='portal',
+                 updated_by=excluded.updated_by, updated_at=excluded.updated_at""",
+            (employee, attendance_date, status_code, updated_by, now),
+        )
+    return {"employee_key": employee, "attendance_date": attendance_date, "status_code": status_code, "updated_at": now}
+
+
+def attendance_month(anchor, today=None):
+    today = today or date.today()
+    start = date(anchor.year, anchor.month, 1)
+    end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+    dates = [start + timedelta(days=index) for index in range((end - start).days + 1)]
+    latest_import = latest_attendance_import()
+    default_from = date.fromisoformat(latest_import["range_end"]) if latest_import else today
+    with db_connection() as db:
+        employee_rows = db.execute(
+            """SELECT employee_key, source_employee_id, employee_name, role, employment_status,
+                      pl_balance, sl_balance, sort_order
+               FROM attendance_employees ORDER BY sort_order, employee_name"""
+        ).fetchall()
+        record_rows = db.execute(
+            """SELECT employee_key, attendance_date, status_code, source, updated_by, updated_at
+               FROM attendance_records WHERE attendance_date BETWEEN ? AND ?""",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        updated = db.execute(
+            """SELECT MAX(updated_at) AS updated_at FROM attendance_records"""
+        ).fetchone()["updated_at"]
+    records = {(row["employee_key"], row["attendance_date"]): dict(row) for row in record_rows}
+    employees = []
+    daily = {day.isoformat(): {"rostered": 0, "present": 0, "planned": 0, "unplanned": 0, "off": 0} for day in dates}
+    totals = {"present": 0, "planned": 0, "unplanned": 0, "off": 0}
+    for employee in employee_rows:
+        item = dict(employee)
+        item["active"] = item["employment_status"] == "Active"
+        item["days"] = []
+        for day in dates:
+            key = (item["employee_key"], day.isoformat())
+            saved = records.get(key)
+            code = saved["status_code"] if saved else None
+            virtual = False
+            if not code and item["active"] and default_from <= day <= today:
+                code, virtual = "P", True
+            item["days"].append({
+                "date": day.isoformat(), "code": code or "", "label": STATUS_LABELS.get(code, code or "Not marked"),
+                "virtual": virtual,
+            })
+            if not item["active"] or day > today:
+                continue
+            daily_item = daily[day.isoformat()]
+            daily_item["rostered"] += 1
+            if code in PRESENT_CODES:
+                daily_item["present"] += 1
+                totals["present"] += 1
+            elif code in PLANNED_CODES:
+                daily_item["planned"] += 1
+                totals["planned"] += 1
+            elif code in UNPLANNED_CODES:
+                daily_item["unplanned"] += 1
+                totals["unplanned"] += 1
+            elif code in NON_WORKING_CODES:
+                daily_item["off"] += 1
+                totals["off"] += 1
+        employees.append(item)
+    attended_base = totals["present"] + totals["planned"] + totals["unplanned"]
+    totals["attendance_rate"] = round(totals["present"] / attended_base * 100, 1) if attended_base else 0
+    latest_update = max(filter(None, [updated, latest_import.get("imported_at") if latest_import else None]), default=None)
+    return {
+        "start": start, "end": end, "dates": dates, "employees": employees, "daily": daily,
+        "totals": totals, "latest_import": latest_import, "last_updated": latest_update,
+        "status_labels": STATUS_LABELS,
+    }

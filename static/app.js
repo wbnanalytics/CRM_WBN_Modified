@@ -1,6 +1,21 @@
 document.querySelector("#menuButton")?.addEventListener("click", () => document.querySelector("#sidebar")?.classList.toggle("open"));
 const todayLabel = document.querySelector("#todayLabel");
 if (todayLabel) todayLabel.textContent = new Intl.DateTimeFormat("en-IN", {day: "numeric", month: "short", year: "numeric"}).format(new Date());
+const istClock = document.querySelector("[data-ist-clock]");
+const updateIstClock = () => {
+  if (!istClock) return;
+  istClock.textContent = new Intl.DateTimeFormat("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true}).format(new Date()) + " IST";
+};
+updateIstClock();
+if (istClock) window.setInterval(updateIstClock, 1000);
+document.querySelectorAll("[data-ist-time]").forEach((element) => {
+  const parsed = new Date(element.dataset.istTime);
+  if (!Number.isNaN(parsed.getTime())) element.textContent = new Intl.DateTimeFormat("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true}).format(parsed) + " IST";
+});
+document.querySelectorAll("[data-permission-toggle]").forEach((button) => button.addEventListener("click", () => {
+  const checked = button.dataset.permissionToggle === "all";
+  button.closest("[data-permission-group]")?.querySelectorAll('input[type="checkbox"][name="permissions"]').forEach((checkbox) => { checkbox.checked = checked; });
+}));
 document.querySelectorAll("[data-date-filter]").forEach((form) => {
   const preset = form.querySelector("[data-preset]");
   const custom = form.querySelector("[data-custom-dates]");

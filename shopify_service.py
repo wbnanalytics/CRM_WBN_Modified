@@ -10,7 +10,7 @@ import requests
 from database import (
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
     replace_shopify_sales, seed_shopify_employees, shopify_sales_between,
-    shopify_targets_between, start_sync_run,
+    shopify_sales_summary, shopify_targets_between, start_sync_run,
 )
 
 
@@ -129,6 +129,19 @@ def _shopifyql(token, query):
     return (result.get("tableData") or {}).get("rows") or []
 
 
+def _shopifyql_all(token, query, page_size=1000):
+    rows = []
+    offset = 0
+    while True:
+        page = _shopifyql(token, f"{query}\nLIMIT {page_size} OFFSET {offset}")
+        rows.extend(page)
+        if len(page) < page_size:
+            return rows
+        offset += page_size
+        if offset >= 25000:
+            raise ShopifyError("Shopify returned more than 25,000 grouped rows; reduce the sync date range")
+
+
 def _month_chunks(start, end):
     cursor = start
     while cursor <= end:
@@ -155,9 +168,8 @@ SHOW total_sales, orders
 TIMESERIES day
 GROUP BY staff_member_name
 SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
-ORDER BY day ASC
-LIMIT 1000"""
-            source_rows = _shopifyql(token, query)
+ORDER BY day ASC, staff_member_name ASC"""
+            source_rows = _shopifyql_all(token, query)
             received += len(source_rows)
             combined = defaultdict(lambda: {"total_sales": 0.0, "order_count": 0, "source_names": set()})
             discovered = {}
@@ -188,6 +200,11 @@ LIMIT 1000"""
                 }
                 for (day, employee_key), item in combined.items()
             ]
+            previous = shopify_sales_summary(chunk_start.isoformat(), chunk_end.isoformat())
+            if previous["row_count"] and not rows:
+                raise ShopifyError(
+                    f"Shopify returned an empty snapshot for {chunk_start} to {chunk_end}; existing data was preserved"
+                )
             saved += replace_shopify_sales(chunk_start.isoformat(), chunk_end.isoformat(), rows)
         finish_sync_run(run_id, "success", received, saved)
         return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
@@ -212,29 +229,29 @@ def _period_columns(period, anchor):
     elif period == "dashboard":
         month_start = date(anchor.year, anchor.month, 1)
         month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        first_sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
-        sundays = []
-        cursor = first_sunday
+        columns = []
+        cursor = month_start
         while cursor <= month_end:
-            sundays.append(cursor)
-            cursor += timedelta(days=7)
-        columns = [
-            {
-                "key": sunday.isoformat(),
-                "label": f"{(sunday - timedelta(days=6)).strftime('%d %b')} – {sunday.strftime('%d %b')}",
-                "start": sunday - timedelta(days=6), "end": sunday,
-            }
-            for sunday in sundays
-        ]
-        start, end = columns[0]["start"], columns[-1]["end"]
+            week_end = min(cursor + timedelta(days=6 - cursor.weekday()), month_end)
+            columns.append({
+                "key": cursor.isoformat(),
+                "label": f"{cursor.strftime('%d %b')} – {week_end.strftime('%d %b')}",
+                "start": cursor, "end": week_end,
+            })
+            cursor = week_end + timedelta(days=1)
+        start, end = month_start, month_end
         default_target_divisor = 1
     elif period == "monthly":
         start = date(anchor.year, anchor.month, 1)
         end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        columns = [{
-            "key": start.isoformat(), "label": start.strftime("%B %Y"),
-            "start": start, "end": end,
-        }]
+        columns = []
+        cursor = start
+        while cursor <= end:
+            columns.append({
+                "key": cursor.isoformat(), "label": cursor.strftime("%d %b"),
+                "start": cursor, "end": cursor,
+            })
+            cursor += timedelta(days=1)
         default_target_divisor = 0.25
     else:
         period = "yearly"
@@ -291,16 +308,21 @@ def sales_report(period="daily", anchor=None):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        targets = [overrides.get(
-            (employee["employee_key"], (column["start"] if period == "yearly" else target_start).isoformat()),
-            period_target,
-        ) for column in columns]
+        if period == "monthly":
+            selected_target = overrides.get((employee["employee_key"], target_start.isoformat()), period_target)
+            targets = [selected_target / len(columns) for _ in columns]
+        else:
+            targets = [overrides.get(
+                (employee["employee_key"], (column["start"] if period == "yearly" else target_start).isoformat()),
+                period_target,
+            ) for column in columns]
         total_target = sum(targets)
         total = sum(values)
         rows.append({
             **employee, "values": values, "order_values": order_values,
             "period_target": period_target, "targets": targets, "total_target": total_target,
             "total": total, "orders": sum(order_values),
+            "average_order_value": total / sum(order_values) if sum(order_values) else 0,
             "attainment": total / total_target if total_target else None,
         })
     role_order = {"Sales": 0, "CRM - CS": 1, "Team Coach": 2, "Unassigned": 9}
@@ -328,6 +350,7 @@ def sales_report(period="daily", anchor=None):
         "team": {
             "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),
+            "average_order_value": sum(team_values) / sum(team_orders) if sum(team_orders) else 0,
             "target": team_target,
             "attainment": sum(team_values) / team_target if team_target else 0,
         },

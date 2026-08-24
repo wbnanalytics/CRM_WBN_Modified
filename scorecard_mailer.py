@@ -35,7 +35,8 @@ def email_ready():
         config["sender"] and os.getenv("AZURE_TENANT_ID")
         and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
     )
-    return smtp_ready or graph_ready
+    transport = _mail_setting("CRM_MAIL_TRANSPORT", "crm_mail_transport", default="graph" if graph_ready else "smtp").lower()
+    return graph_ready if transport == "graph" else smtp_ready
 
 
 def _send_graph(subject, body, plain_text, recipient, sender):
@@ -67,7 +68,12 @@ def _send_graph(subject, body, plain_text, recipient, sender):
         timeout=30,
     )
     if response.status_code != 202:
-        raise RuntimeError(f"Microsoft Graph rejected the message ({response.status_code})")
+        try:
+            detail = (response.json().get("error") or {}).get("message")
+        except ValueError:
+            detail = None
+        suffix = f": {detail}" if detail else ""
+        raise RuntimeError(f"Microsoft Graph rejected the message ({response.status_code}){suffix}")
 
 
 def _send_smtp(subject, body, plain_text, recipient, config):
@@ -130,11 +136,18 @@ def send_record_email(record_type, record, recipient):
         config["sender"] and os.getenv("AZURE_TENANT_ID")
         and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
     )
-    if graph_ready:
+    transport = _mail_setting("CRM_MAIL_TRANSPORT", "crm_mail_transport", default="graph" if graph_ready else "smtp").lower()
+    if transport == "graph":
+        if not graph_ready:
+            raise RuntimeError("Microsoft Graph mail is selected but the Azure application credentials are incomplete")
         try:
             _send_graph(subject, body, plain_text, recipient, config["sender"])
             return
-        except Exception:
-            if not all(config[key] for key in ("host", "user", "password", "sender")):
-                raise
+        except Exception as exc:
+            raise RuntimeError(
+                "Email could not be sent through Microsoft 365. Confirm that the Azure app has the "
+                "Application Mail.Send permission with admin consent. " + str(exc)
+            ) from exc
+    if transport != "smtp":
+        raise RuntimeError("CRM_MAIL_TRANSPORT must be graph or smtp")
     _send_smtp(subject, body, plain_text, recipient, config)

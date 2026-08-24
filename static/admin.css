@@ -37,3 +37,5 @@
   color: var(--muted);
   font-weight: 500;
 }
+
+.permission-bulk{display:flex;gap:6px;margin:8px 0}.permission-bulk button{padding:5px 8px;border:1px solid var(--line);border-radius:7px;background:#f8faf7;color:var(--forest);cursor:pointer;font-size:8px;font-weight:800}.permission-bulk button:hover{background:#edf4ed}

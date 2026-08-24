@@ -17,7 +17,7 @@
 <section class="shopify-toolbar panel">
   <div class="report-tabs sales-tabs">
     {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
-      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, date=selected_date, week=selected_week, month=selected_month, year=selected_year) }}">{{ label }}</a>
+      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key) }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" class="sales-period-form">
@@ -38,6 +38,7 @@
 <section class="metric-grid sales-metric-grid" aria-label="Shopify sales summary">
   <article class="metric-card featured"><div class="metric-top"><span>Managed team sales</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
   <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{ '{:,}'.format(report.team.orders) }}</strong><p>Orders assigned to configured team members</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Average order value</span><span class="metric-symbol sage">₹</span></div><strong>{{ report.team.average_order_value|inr }}</strong><p>Total sales divided by attributed orders</p></article>
   <article class="metric-card"><div class="metric-top"><span>Target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Target for the selected reporting period</p></article>
   <article class="metric-card"><div class="metric-top"><span>Attainment</span><span class="metric-symbol blue">↗</span></div><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong><p>Managed team sales versus target</p></article>
 </section>
@@ -52,20 +53,20 @@
       <thead><tr>
         <th>Employee</th><th>Role</th>
         {% for column in report.columns %}<th>{{ column.label }}</th>{% endfor %}
-        <th>Total</th><th>Attainment</th>
+        <th>Total</th><th>Orders</th><th>Average order value</th><th>Attainment</th>
       </tr></thead>
       <tbody>
         <tr class="team-total-row">
           <td><strong>CRM Team</strong></td><td>Managed team</td>
           {% for value in report.team['values'] %}<td><strong>{{ value|inr }}</strong><small>Target {{ report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}
-          <td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
+          <td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td><td><strong>{{ report.team.orders }}</strong></td><td><strong>{{ report.team.average_order_value|inr }}</strong></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
         </tr>
         {% for employee in report.rows if employee.include_in_team %}
         <tr class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
           <td><strong>{{ employee.display_name }}</strong></td>
           <td>{{ employee.role }}</td>
           {% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span></td>{% endfor %}
-          <td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td>
+          <td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td><td>{{ employee.orders }}</td><td>{{ employee.average_order_value|inr }}</td>
           <td>{% if employee.attainment is not none %}<span class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{ (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}

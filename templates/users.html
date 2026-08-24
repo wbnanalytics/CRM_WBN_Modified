@@ -13,7 +13,7 @@
         <label>Work email<input type="email" name="email" placeholder="name@wellbeingnutrition.com" pattern=".+@wellbeingnutrition\.com" required></label>
         <label>Display name<input type="text" name="display_name" placeholder="Full name"></label>
         <label>Access level<select name="role"><option value="user">User</option><option value="admin">Admin</option></select></label>
-        <fieldset class="permission-fieldset"><legend>Module &amp; submodule access</legend>{% for key, label, description in permission_options %}<label class="permission-check"><input type="checkbox" name="permissions" value="{{ key }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</fieldset>
+        <fieldset class="permission-fieldset" data-permission-group><legend>Module &amp; submodule access</legend><div class="permission-bulk"><button type="button" data-permission-toggle="all">Select all</button><button type="button" data-permission-toggle="none">Clear all</button></div>{% for key, label, description in permission_options %}<label class="permission-check"><input type="checkbox" name="permissions" value="{{ key }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</fieldset>
         <button class="primary-button" type="submit">Save access</button>
       </form>
     </section>
@@ -28,7 +28,7 @@
         <td>{% if user.email == primary_admin %}<span class="locked-label">Protected</span>{% else %}<details class="access-editor"><summary class="edit-access-button">Edit access</summary><form method="post" action="{{ url_for('update_user') }}" class="inline-user-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="email" value="{{ user.email }}">
           <label class="inline-field">Access level<select name="role" aria-label="Role for {{ user.email }}"><option value="user" {{ 'selected' if user.role == 'user' }}>User</option><option value="admin" {{ 'selected' if user.role == 'admin' }}>Admin</option></select></label>
-          <div class="compact-permissions"><strong>Module access <small>(applies to users)</small></strong>{% for key, label, description in permission_options %}<label><input type="checkbox" name="permissions" value="{{ key }}" {{ 'checked' if key in user.permissions }}>{{ label }}</label>{% endfor %}</div>
+          <div class="compact-permissions" data-permission-group><strong>Module access <small>(applies to users)</small></strong><div class="permission-bulk"><button type="button" data-permission-toggle="all">Select all</button><button type="button" data-permission-toggle="none">Clear all</button></div>{% for key, label, description in permission_options %}<label><input type="checkbox" name="permissions" value="{{ key }}" {{ 'checked' if key in user.permissions }}>{{ label }}</label>{% endfor %}</div>
           <label class="active-toggle"><input type="checkbox" name="active" value="1" {{ 'checked' if user.active }}>Account active</label><button type="submit" class="table-action">Save changes</button>
         </form></details>{% endif %}</td>
       </tr>{% endfor %}

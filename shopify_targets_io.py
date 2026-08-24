@@ -64,7 +64,7 @@ def performance_excel(report):
     headers = ["Employee", "Role"]
     for column in report["columns"]:
         headers.extend([f"{column['label']} Sales", f"{column['label']} Target"])
-    headers.extend(["Total Sales", "Total Target", "Attainment %"])
+    headers.extend(["Total Sales", "Orders", "Average Order Value", "Total Target", "Attainment %"])
     sheet.append(headers)
     for cell in sheet[4]:
         cell.fill = PatternFill("solid", fgColor=LIME)
@@ -74,7 +74,7 @@ def performance_excel(report):
         values = [employee["display_name"], employee["role"]]
         for index, sales in enumerate(employee["values"]):
             values.extend([sales, employee["targets"][index]])
-        values.extend([employee["total"], employee["total_target"], (employee["attainment"] or 0) * 100])
+        values.extend([employee["total"], employee["orders"], employee["average_order_value"], employee["total_target"], (employee["attainment"] or 0) * 100])
         sheet.append(values)
         fill = "EAF6EC" if employee["performance_band"] == "top" else ("FCEDEA" if employee["performance_band"] == "bottom" else None)
         if fill:
@@ -83,7 +83,7 @@ def performance_excel(report):
     team_values = ["CRM Team", "Managed team"]
     for index, sales in enumerate(report["team"]["values"]):
         team_values.extend([sales, report["team"]["targets"][index]])
-    team_values.extend([report["team"]["total"], report["team"]["target"], report["team"]["attainment"] * 100])
+    team_values.extend([report["team"]["total"], report["team"]["orders"], report["team"]["average_order_value"], report["team"]["target"], report["team"]["attainment"] * 100])
     sheet.append(team_values)
     for cell in sheet[sheet.max_row]:
         cell.font = Font(bold=True)

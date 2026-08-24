@@ -15,6 +15,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='scorecard.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
 </head>
 <body>
@@ -24,6 +26,7 @@
       <nav aria-label="Main navigation">
         <span class="nav-label">WORKSPACE</span>
         {% if can_access('dashboard') %}<a class="nav-item {{ 'active' if active_page == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>{% endif %}
+        {% if can_access('attendance.view') %}<a class="nav-item {{ 'active' if active_page == 'attendance' }}" href="{{ url_for('attendance') }}"><span class="nav-glyph boxed">A</span>Attendance</a>{% endif %}
         <span class="nav-label section-label">CS METRIC</span>
         {% if can_access('zoho.customer_experience') or can_access('zoho.customer_escalation') %}<a class="nav-item {{ 'active' if active_page == 'zoho' }}" href="{{ url_for('zoho') }}"><span class="nav-glyph boxed">Z</span>Zoho</a>{% endif %}
         {% if can_access('bik.customer_tickets') or can_access('bik.all_conversations') %}<a class="nav-item {{ 'active' if active_page == 'bik' }}" href="{{ url_for('bik') }}"><span class="nav-glyph boxed">B</span>BIK</a>{% endif %}
@@ -42,6 +45,12 @@
     </aside>
     <main class="main-content">
       <header class="mobile-header"><button id="menuButton" aria-label="Open navigation">☰</button><span class="mini-logo">WBN</span></header>
+      <div class="refresh-ticker" aria-label="Data refresh status">
+        <span class="ticker-live"><i></i><strong data-ist-clock>IST</strong></span>
+        <div class="ticker-track">
+          {% for item in refresh_ticker['items'] %}<span class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{ item.completed_at|ist_datetime }}</time>{% endif %}</span>{% endfor %}
+        </div>
+      </div>
       {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}
       {% block content %}{% endblock %}
     </main>

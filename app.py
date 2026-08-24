@@ -24,6 +24,9 @@ from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, target_template
+from attendance_service import attendance_month, set_attendance
+from cs_dashboard_service import cs_dashboard
+from dashboard_export import cs_dashboard_excel
 
 
 load_dotenv()
@@ -57,6 +60,7 @@ PORTAL_PERMISSIONS = (
     ("bik.customer_tickets", "BIK · Customer Tickets", "Ticket performance and service metrics"),
     ("bik.all_conversations", "BIK · All Conversations", "Conversation and message metrics"),
     ("shopify.view", "Shopify · Sales Reports", "Daily, weekly and monthly employee sales"),
+    ("attendance.view", "Attendance · Planner", "View the monthly CRM attendance planner"),
     ("scorecard.view", "Scorecard · Dashboard", "Scorecard overview and performance trends"),
     ("scorecard.agents", "Scorecard · Agents", "Create and maintain the agent directory"),
     ("scorecard.scorecards", "Scorecard · Scorecards", "Create, score and export monthly scorecards"),
@@ -127,6 +131,45 @@ def selected_range():
     return start, end, preset
 
 
+def selected_reporting_period(default="daily"):
+    today = datetime.now(IST).date()
+    period = request.args.get("period", default)
+    if period not in {"daily", "weekly", "monthly", "yearly"}:
+        period = default
+    try:
+        if period == "daily":
+            anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
+        elif period == "weekly":
+            iso_value = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}")
+            iso_year, iso_week = iso_value.split("-W")
+            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
+        elif period == "monthly":
+            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+        else:
+            anchor = date(int(request.args.get("year", today.year)), 1, 1)
+    except (TypeError, ValueError):
+        anchor = today if period == "daily" else (
+            today - timedelta(days=today.weekday()) if period == "weekly" else
+            date(today.year, today.month, 1) if period == "monthly" else date(today.year, 1, 1)
+        )
+    if period == "daily":
+        start = end = anchor
+    elif period == "weekly":
+        start, end = anchor - timedelta(days=anchor.weekday()), anchor - timedelta(days=anchor.weekday()) + timedelta(days=6)
+    elif period == "monthly":
+        start = date(anchor.year, anchor.month, 1)
+        next_month = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1)
+        end = next_month - timedelta(days=1)
+    else:
+        start, end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
+    iso = anchor.isocalendar()
+    return {
+        "period": period, "anchor": anchor, "start": start, "end": end,
+        "date": anchor.isoformat(), "week": f"{iso.year}-W{iso.week:02}",
+        "month": anchor.strftime("%Y-%m"), "year": anchor.year, "today": today,
+    }
+
+
 def microsoft_ready():
     return all(os.getenv(key) for key in ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_REDIRECT_URI"))
 
@@ -173,6 +216,22 @@ def can_access(permission_key):
 
 def can_access_scorecard():
     return any(can_access(key) for key, _, _ in PORTAL_PERMISSIONS if key.startswith("scorecard."))
+
+
+def refresh_ticker_data():
+    latest = {}
+    for row in recent_sync_runs(100):
+        latest.setdefault(row["source"], row)
+    items = []
+    for key, label in (("shopify", "Shopify"), ("zoho", "Zoho Desk"), ("bik", "BIK")):
+        row = latest.get(key)
+        items.append({
+            "key": key, "label": label,
+            "status": row["status"] if row else "pending",
+            "completed_at": row["completed_at"] if row else None,
+        })
+    completed = [item["completed_at"] for item in items if item["completed_at"]]
+    return {"items": items, "latest": max(completed) if completed else None}
 
 
 def permission_required(permission_key):
@@ -245,6 +304,7 @@ def test_bik_auth():
 
 @app.context_processor
 def inject_globals():
+    refresh_ticker = refresh_ticker_data() if session.get("user") else {"items": [], "latest": None}
     return {
         "current_year": datetime.now(IST).year,
         "connector_status": connector_status,
@@ -253,6 +313,7 @@ def inject_globals():
         "can_access": can_access,
         "can_access_scorecard": can_access_scorecard,
         "csrf_token": csrf_token,
+        "refresh_ticker": refresh_ticker,
     }
 
 
@@ -293,6 +354,8 @@ def index():
             return redirect(url_for("bik"))
         if can_access("shopify.view"):
             return redirect(url_for("shopify"))
+        if can_access("attendance.view"):
+            return redirect(url_for("attendance"))
         if can_access_scorecard():
             return redirect(url_for("scorecard"))
         if session.get("user", {}).get("role") == "admin":
@@ -333,21 +396,34 @@ def logout():
 @permission_required("dashboard")
 def dashboard():
     seed_default_employees()
-    today = datetime.now(IST).date()
-    try:
-        month = request.args.get("month", today.strftime("%Y-%m"))
-        anchor = date.fromisoformat(f"{month}-01")
-    except (TypeError, ValueError):
-        anchor = date(today.year, today.month, 1)
-    report = shopify_sales_report("dashboard", anchor)
+    view = request.args.get("view", "cs")
+    if view not in {"cs", "sales"}:
+        view = "cs"
+    selection = selected_reporting_period("daily" if view == "cs" else "monthly")
+    report = shopify_sales_report(selection["period"], selection["anchor"])
     managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
     top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
+    cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat())
     return render_template(
-        "dashboard.html", active_page="dashboard", page_title="Sales Dashboard",
+        "dashboard_v2.html", active_page="dashboard", page_title="CS Dashboard" if view == "cs" else "Sales Dashboard",
+        view=view, selection=selection, cs_report=cs_report,
         report=report, top_performers=top_performers, bottom_performers=bottom_performers,
-        selected_month=anchor.strftime("%Y-%m"),
+        selected_month=selection["month"],
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
+        available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
+    )
+
+
+@app.route("/dashboard/cs.xlsx")
+@permission_required("dashboard")
+def download_cs_dashboard():
+    selection = selected_reporting_period("daily")
+    report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat())
+    return send_file(
+        cs_dashboard_excel(report), as_attachment=True,
+        download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -383,24 +459,8 @@ def bik():
 @permission_required("shopify.view")
 def shopify():
     seed_default_employees()
-    period = request.args.get("period", "daily")
-    if period not in {"daily", "weekly", "monthly", "yearly"}:
-        period = "daily"
-    today = datetime.now(IST).date()
-    try:
-        if period == "daily":
-            anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
-        elif period == "weekly":
-            iso_year, iso_week = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}").split("-W")
-            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
-        elif period == "yearly":
-            year = int(request.args.get("year", today.year))
-            anchor = date(year, 1, 1)
-        else:
-            month = request.args.get("month", today.strftime("%Y-%m"))
-            anchor = date.fromisoformat(f"{month}-01")
-    except (TypeError, ValueError):
-        anchor = today if period == "daily" else (today - timedelta(days=today.weekday()) if period == "weekly" else date(today.year, today.month if period == "monthly" else 1, 1))
+    selection = selected_reporting_period("daily")
+    period, anchor, today = selection["period"], selection["anchor"], selection["today"]
     report = shopify_sales_report(period, anchor)
     iso = anchor.isocalendar()
     return render_template(
@@ -412,25 +472,44 @@ def shopify():
     )
 
 
+@app.route("/attendance")
+@permission_required("attendance.view")
+def attendance():
+    today = datetime.now(IST).date()
+    try:
+        selected_month = request.args.get("month", today.strftime("%Y-%m"))
+        anchor = date.fromisoformat(f"{selected_month}-01")
+    except (TypeError, ValueError):
+        anchor = date(today.year, today.month, 1)
+    report = attendance_month(anchor, today)
+    return render_template(
+        "attendance.html", active_page="attendance", page_title="Attendance Planner",
+        report=report, selected_month=anchor.strftime("%Y-%m"), today=today,
+    )
+
+
+@app.route("/api/attendance", methods=["POST"])
+@admin_required
+def update_attendance():
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        result = set_attendance(
+            (body.get("employee_key") or "").strip(),
+            body.get("attendance_date") or "",
+            body.get("status_code") or "",
+            session["user"]["email"],
+        )
+        return jsonify({"success": True, **result})
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/shopify/performance.xlsx")
 @permission_required("shopify.view")
 def download_shopify_performance():
-    period = request.args.get("period", "daily")
-    if period not in {"daily", "weekly", "monthly", "yearly"}:
-        period = "daily"
-    today = datetime.now(IST).date()
-    try:
-        if period == "daily":
-            anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
-        elif period == "weekly":
-            iso_year, iso_week = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}").split("-W")
-            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
-        elif period == "monthly":
-            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
-        else:
-            anchor = date(int(request.args.get("year", today.year)), 1, 1)
-    except (TypeError, ValueError):
-        anchor = today
+    selection = selected_reporting_period("daily")
+    period, anchor = selection["period"], selection["anchor"]
     report = shopify_sales_report(period, anchor)
     label = str(anchor.year) if period == "yearly" else (anchor.strftime("%G-W%V") if period == "weekly" else anchor.isoformat() if period == "daily" else anchor.strftime("%Y-%m"))
     return send_file(

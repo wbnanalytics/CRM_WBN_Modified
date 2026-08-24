@@ -178,6 +178,41 @@ def init_db():
                 PRIMARY KEY (employee_key, period_type, period_start)
             );
 
+            CREATE TABLE IF NOT EXISTS attendance_employees (
+                employee_key TEXT PRIMARY KEY,
+                source_employee_id TEXT,
+                employee_name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                employment_status TEXT NOT NULL DEFAULT 'Active'
+                    CHECK (employment_status IN ('Active', 'Inactive')),
+                pl_balance TEXT,
+                sl_balance TEXT,
+                sort_order INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS attendance_records (
+                employee_key TEXT NOT NULL,
+                attendance_date TEXT NOT NULL,
+                status_code TEXT NOT NULL,
+                source TEXT NOT NULL DEFAULT 'portal',
+                updated_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (employee_key, attendance_date),
+                FOREIGN KEY (employee_key) REFERENCES attendance_employees(employee_key) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS attendance_imports (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_name TEXT NOT NULL,
+                range_start TEXT NOT NULL,
+                range_end TEXT NOT NULL,
+                employees_imported INTEGER NOT NULL DEFAULT 0,
+                records_imported INTEGER NOT NULL DEFAULT 0,
+                imported_by TEXT NOT NULL,
+                imported_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS sync_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 requested_by TEXT NOT NULL,
@@ -357,6 +392,8 @@ def init_db():
                 ON shopify_sales_daily(day);
             CREATE INDEX IF NOT EXISTS idx_shopify_targets_period
                 ON shopify_sales_targets(period_type, period_start);
+            CREATE INDEX IF NOT EXISTS idx_attendance_records_date
+                ON attendance_records(attendance_date, employee_key);
             CREATE INDEX IF NOT EXISTS idx_sync_requests_status
                 ON sync_requests(status, requested_at DESC);
             CREATE INDEX IF NOT EXISTS idx_crm_scorecards_agent_date
@@ -687,6 +724,17 @@ def shopify_sales_between(start_date, end_date):
             (start_date, end_date),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def shopify_sales_summary(start_date, end_date):
+    with db_connection() as db:
+        row = db.execute(
+            """SELECT COUNT(*) AS row_count, COALESCE(SUM(total_sales), 0) AS total_sales,
+                      COALESCE(SUM(order_count), 0) AS order_count
+               FROM shopify_sales_daily WHERE day BETWEEN ? AND ?""",
+            (start_date, end_date),
+        ).fetchone()
+    return dict(row)
 
 
 def list_shopify_employees():
