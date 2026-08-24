@@ -250,9 +250,10 @@ def _period_columns(period, anchor):
         start = anchor - timedelta(days=anchor.weekday())
         end = start + timedelta(days=6)
         columns = [{
-            "key": end.isoformat(), "label": f"{start.strftime('%d %b')} – {end.strftime('%d %b %Y')}",
-            "start": start, "end": end,
-        }]
+            "key": (start + timedelta(days=index)).isoformat(),
+            "label": (start + timedelta(days=index)).strftime("%a %d %b"),
+            "start": start + timedelta(days=index), "end": start + timedelta(days=index),
+        } for index in range(7)]
         default_target_divisor = 1
     elif period == "dashboard":
         month_start = date(anchor.year, anchor.month, 1)
@@ -337,7 +338,7 @@ def sales_report(period="daily", anchor=None):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        if period == "monthly":
+        if period in {"weekly", "monthly"}:
             selected_target = overrides.get((employee["employee_key"], target_start.isoformat()), period_target)
             targets = [selected_target / len(columns) for _ in columns]
         else:
