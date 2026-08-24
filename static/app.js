@@ -22,17 +22,17 @@ if (syncButton) {
     if (syncMessage && message) syncMessage.textContent = message;
     if (!busy && pollTimer) clearTimeout(pollTimer);
   };
-  const pollSync = async () => {
+  const pollSync = async (showFailure = false) => {
     try {
       const response = await fetch("/api/sync/status", {headers: {Accept: "application/json"}});
       const data = await response.json();
       if (data.status === "queued" || data.status === "running") {
         setSyncState(data.status, data.status === "queued" ? "Refresh queued…" : "Refreshing Zoho, BIK and Shopify…");
-        pollTimer = setTimeout(pollSync, 3000);
+        pollTimer = setTimeout(() => pollSync(showFailure), 3000);
       } else if (data.status === "success") {
         setSyncState(data.status, "All data refreshed successfully");
       } else if (data.status === "failed") {
-        setSyncState(data.status, "Refresh finished with an error — please retry");
+        setSyncState(data.status, showFailure ? "Refresh finished with an error — please retry" : "Manual refresh available");
       } else {
         setSyncState(data.status, "Zoho, BIK and Shopify");
       }
@@ -50,10 +50,10 @@ if (syncButton) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Refresh request failed");
-      pollSync();
+      pollSync(true);
     } catch (error) {
       setSyncState("failed", error.message || "Refresh request failed");
     }
   });
-  pollSync();
+  pollSync(false);
 }
