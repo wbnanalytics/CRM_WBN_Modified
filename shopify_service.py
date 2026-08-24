@@ -247,20 +247,12 @@ def _period_columns(period, anchor):
         columns = [{"key": anchor.isoformat(), "label": anchor.strftime("%d %b %Y"), "start": anchor, "end": anchor}]
         default_target_divisor = 5.5
     elif period == "weekly":
-        month_start = date(anchor.year, anchor.month, 1)
-        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
-        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
-        columns = []
-        week_end = first_friday
-        while week_end <= last_friday:
-            columns.append({
-                "key": week_end.isoformat(),
-                "label": f"WE {week_end.strftime('%d %b').upper()}",
-                "start": week_end - timedelta(days=6), "end": week_end,
-            })
-            week_end += timedelta(days=7)
-        start, end = columns[0]["start"], columns[-1]["end"]
+        end = anchor + timedelta(days=(4 - anchor.weekday()) % 7)
+        start = end - timedelta(days=6)
+        columns = [{
+            "key": end.isoformat(), "label": f"WE {end.strftime('%d %b').upper()}",
+            "start": start, "end": end,
+        }]
         default_target_divisor = 1
     elif period == "dashboard":
         month_start = date(anchor.year, anchor.month, 1)
@@ -304,7 +296,7 @@ def _period_columns(period, anchor):
     return period, start, end, columns, default_target_divisor
 
 
-def sales_report(period="daily", anchor=None):
+def sales_report(period="daily", anchor=None, employee_key=""):
     anchor = anchor or datetime.now(IST).date()
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
@@ -324,6 +316,16 @@ def sales_report(period="daily", anchor=None):
             "role": item["role"], "weekly_target": item["weekly_target"],
             "include_in_team": item["include_in_team"], "active": 1,
         })
+    available_employees = sorted(
+        (
+            {"employee_key": item["employee_key"], "display_name": item["display_name"], "role": item["role"]}
+            for item in configs.values() if item.get("include_in_team")
+        ),
+        key=lambda item: item["display_name"].lower(),
+    )
+    selected_employee = next((item for item in available_employees if item["employee_key"] == employee_key), None)
+    if selected_employee:
+        configs = {employee_key: configs[employee_key]}
     by_employee_day = defaultdict(lambda: {"sales": 0.0, "orders": 0})
     for item in sales:
         slot = by_employee_day[(item["employee_key"], item["day"])]
@@ -386,6 +388,8 @@ def sales_report(period="daily", anchor=None):
     team_target = sum(row["total_target"] for row in team_rows)
     product_summary = defaultdict(lambda: {"sales": 0.0, "orders": 0})
     for item in product_sales:
+        if selected_employee and item["employee_key"] != employee_key:
+            continue
         slot = product_summary[(item["employee_key"], item["display_name"], item["role"], item["product_title"], item["product_sku"])]
         slot["sales"] += float(item["total_sales"])
         slot["orders"] += int(item["order_count"])
@@ -400,6 +404,8 @@ def sales_report(period="daily", anchor=None):
         "period": period, "anchor": anchor, "start": start, "end": end,
         "columns": columns, "rows": rows,
         "product_rows": product_rows,
+        "available_employees": available_employees,
+        "selected_employee": selected_employee,
         "team": {
             "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),

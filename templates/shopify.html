@@ -10,22 +10,23 @@
     <span class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
       {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at|ist_datetime }}{% else %}Awaiting first sync{% endif %}
     </span>
-    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week=selected_week, month=selected_month, year=selected_year) }}">Download Excel</a>
+    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download Excel</a>
   </div>
 </section>
 
 <section class="shopify-toolbar panel">
   <div class="report-tabs sales-tabs">
     {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
-      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key) }}">{{ label }}</a>
+      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, agent=selected_agent) }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" class="sales-period-form">
     <input type="hidden" name="period" value="{{ period }}">
+    <label><span>Employee</span><select name="agent"><option value="">All employees</option>{% for employee in report.available_employees %}<option value="{{ employee.employee_key }}" {{ 'selected' if employee.employee_key == selected_agent }}>{{ employee.display_name }}</option>{% endfor %}</select></label>
     {% if period == 'daily' %}
       <label><span>Date</span><input type="date" name="date" value="{{ selected_date }}"></label>
     {% elif period == 'weekly' %}
-      <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
+      <label><span>Week ending (Friday)</span><input type="date" name="week_end" value="{{ selected_week_end }}"></label>
     {% elif period == 'monthly' %}
       <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
     {% else %}
@@ -36,7 +37,7 @@
 </section>
 
 <section class="metric-grid sales-metric-grid" aria-label="Shopify sales summary">
-  <article class="metric-card featured"><div class="metric-top"><span>Managed team sales</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
+  <article class="metric-card featured"><div class="metric-top"><span>{{ 'Selected employee sales' if report.selected_employee else 'Managed team sales' }}</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
   <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{ '{:,}'.format(report.team.orders) }}</strong><p>Orders assigned to configured team members</p></article>
   <article class="metric-card"><div class="metric-top"><span>Average order value</span><span class="metric-symbol sage">₹</span></div><strong>{{ report.team.average_order_value|inr }}</strong><p>Total sales divided by attributed orders</p></article>
   <article class="metric-card"><div class="metric-top"><span>Target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Target for the selected reporting period</p></article>
@@ -48,15 +49,6 @@
     <div><span class="eyebrow">{{ period|upper }} REPORT</span><h2>Sales performance by employee</h2></div>
     {% if period == 'weekly' %}<span class="count-badge">Saturday–Friday · Week ending</span>{% elif period == 'yearly' %}<span class="count-badge">Month-by-month</span>{% endif %}
   </div>
-  <div class="sales-bar-chart" aria-label="Sales and target by reporting column">
-    {% set chart_max = ([report.team['values']|max, report.team['targets']|max, 1]|max) %}
-    {% for column in report.columns %}
-      <div class="sales-bar-group" title="{{ column.label }} · Sales {{ report.team['values'][loop.index0]|inr }} · Target {{ report.team['targets'][loop.index0]|inr }}">
-        <div class="sales-bars"><i class="sales-bar target" style="--bar-height:{{ ((report.team['targets'][loop.index0] / chart_max) * 100)|round(1) }}%"></i><i class="sales-bar actual" style="--bar-height:{{ ((report.team['values'][loop.index0] / chart_max) * 100)|round(1) }}%"></i></div>
-        <span>{{ column.label }}</span>
-      </div>
-    {% endfor %}
-  </div>
   <div class="table-wrap sales-matrix-wrap">
     <table class="sales-matrix">
       <thead><tr>
@@ -65,11 +57,11 @@
         <th>Total</th><th>Orders</th><th>Average order value</th><th>Attainment</th>
       </tr></thead>
       <tbody>
-        <tr class="team-total-row">
+        {% if not report.selected_employee %}<tr class="team-total-row">
           <td><strong>CRM Team</strong></td><td>Managed team</td>
           {% for value in report.team['values'] %}<td><strong>{{ value|inr }}</strong><small>Target {{ report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}
           <td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td><td><strong>{{ report.team.orders }}</strong></td><td><strong>{{ report.team.average_order_value|inr }}</strong></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
-        </tr>
+        </tr>{% endif %}
         {% for employee in report.rows if employee.include_in_team %}
         <tr class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
           <td><strong>{{ employee.display_name }}</strong></td>
@@ -85,7 +77,7 @@
 </section>
 
 <section class="panel sales-report-panel product-sales-panel">
-  <div class="panel-head"><div><span class="eyebrow">PRODUCT × EMPLOYEE</span><h2>Product-level sales per person</h2></div><div class="panel-actions"><span class="count-badge" data-product-count>{{ report.product_rows|length }} combinations</span><a class="outline-button export-button" data-product-export href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week=selected_week, month=selected_month, year=selected_year) }}">Download filtered Excel</a></div></div>
+  <div class="panel-head"><div><span class="eyebrow">PRODUCT × EMPLOYEE</span><h2>Product-level sales per person</h2></div><div class="panel-actions"><span class="count-badge" data-product-count>{{ report.product_rows|length }} combinations</span><a class="outline-button export-button" data-product-export href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download filtered Excel</a></div></div>
   <div class="product-filter" data-product-filter><label><span>Search in</span><select data-product-field><option value="all">All columns</option><option value="employee">Employee</option><option value="role">Role</option><option value="product">Product</option><option value="sku">SKU</option></select></label><label class="product-search"><span>Search</span><input type="search" data-product-query placeholder="Type to filter records…" autocomplete="off"></label><button class="outline-button" type="button" data-product-clear>Clear</button></div>
   <div class="table-wrap product-table-scroll"><table><thead><tr><th>Employee</th><th>Role</th><th>Product</th><th>SKU</th><th>Sales</th><th>Orders</th><th>Average order value</th></tr></thead><tbody>{% for item in report.product_rows %}<tr data-product-row data-employee="{{ item.display_name|lower }}" data-role="{{ item.role|lower }}" data-product="{{ item.product_title|lower }}" data-sku="{{ (item.product_sku or '')|lower }}"><td><strong>{{ item.display_name }}</strong></td><td>{{ item.role }}</td><td>{{ item.product_title }}</td><td>{{ item.product_sku or '—' }}</td><td><strong>{{ item.total|inr }}</strong></td><td>{{ item.orders }}</td><td>{{ item.average_order_value|inr }}</td></tr>{% else %}<tr><td colspan="7" class="empty-state">Product-level data will appear after the next Shopify refresh.</td></tr>{% endfor %}</tbody></table></div>
 </section>

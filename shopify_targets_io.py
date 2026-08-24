@@ -80,14 +80,15 @@ def performance_excel(report, product_field="all", product_query=""):
         if fill:
             for cell in sheet[sheet.max_row]:
                 cell.fill = PatternFill("solid", fgColor=fill)
-    team_values = ["CRM Team", "Managed team"]
-    for index, sales in enumerate(report["team"]["values"]):
-        team_values.extend([sales, report["team"]["targets"][index]])
-    team_values.extend([report["team"]["total"], report["team"]["orders"], report["team"]["average_order_value"], report["team"]["target"], report["team"]["attainment"] * 100])
-    sheet.append(team_values)
-    for cell in sheet[sheet.max_row]:
-        cell.font = Font(bold=True)
-        cell.fill = PatternFill("solid", fgColor="E6EFE2")
+    if not report.get("selected_employee"):
+        team_values = ["CRM Team", "Managed team"]
+        for index, sales in enumerate(report["team"]["values"]):
+            team_values.extend([sales, report["team"]["targets"][index]])
+        team_values.extend([report["team"]["total"], report["team"]["orders"], report["team"]["average_order_value"], report["team"]["target"], report["team"]["attainment"] * 100])
+        sheet.append(team_values)
+        for cell in sheet[sheet.max_row]:
+            cell.font = Font(bold=True)
+            cell.fill = PatternFill("solid", fgColor="E6EFE2")
     sheet.freeze_panes = "C5"
     sheet.auto_filter.ref = f"A4:{get_column_letter(sheet.max_column)}{sheet.max_row}"
     for row in sheet.iter_rows(min_row=5, min_col=3, max_col=sheet.max_column - 1):

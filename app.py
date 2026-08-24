@@ -140,26 +140,22 @@ def selected_reporting_period(default="daily"):
         if period == "daily":
             anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
         elif period == "weekly":
-            # Weekly reporting is a month of Saturday-Friday business weeks,
-            # labelled by their Friday week-ending date.
-            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+            default_week_end = today + timedelta(days=(4 - today.weekday()) % 7)
+            anchor = date.fromisoformat(request.args.get("week_end", default_week_end.isoformat()))
+            anchor += timedelta(days=(4 - anchor.weekday()) % 7)
         elif period == "monthly":
             anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         else:
             anchor = date(int(request.args.get("year", today.year)), 1, 1)
     except (TypeError, ValueError):
         anchor = today if period == "daily" else (
-            date(today.year, today.month, 1) if period == "weekly" else
+            today + timedelta(days=(4 - today.weekday()) % 7) if period == "weekly" else
             date(today.year, today.month, 1) if period == "monthly" else date(today.year, 1, 1)
         )
     if period == "daily":
         start = end = anchor
     elif period == "weekly":
-        month_start = date(anchor.year, anchor.month, 1)
-        month_end = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1) - timedelta(days=1)
-        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
-        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
-        start, end = first_friday - timedelta(days=6), last_friday
+        start, end = anchor - timedelta(days=6), anchor
     elif period == "monthly":
         start = date(anchor.year, anchor.month, 1)
         next_month = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1)
@@ -170,6 +166,7 @@ def selected_reporting_period(default="daily"):
     return {
         "period": period, "anchor": anchor, "start": start, "end": end,
         "date": anchor.isoformat(), "week": f"{iso.year}-W{iso.week:02}",
+        "week_end": end.isoformat(),
         "month": anchor.strftime("%Y-%m"), "year": anchor.year, "today": today,
     }
 
@@ -543,13 +540,15 @@ def shopify():
     seed_default_employees()
     selection = selected_reporting_period("daily")
     period, anchor, today = selection["period"], selection["anchor"], selection["today"]
-    report = shopify_sales_report(period, anchor)
+    selected_agent = request.args.get("agent", "").strip()
+    report = shopify_sales_report(period, anchor, selected_agent)
     iso = anchor.isocalendar()
     return render_template(
         "shopify.html", active_page="shopify", page_title="Shopify Sales",
         source=REPORT_SOURCES["shopify"], report=report, period=period,
-        selected_date=anchor.isoformat(), selected_week=f"{iso.year}-W{iso.week:02}",
+        selected_date=anchor.isoformat(), selected_week=f"{iso.year}-W{iso.week:02}", selected_week_end=report["end"].isoformat(),
         selected_month=anchor.strftime("%Y-%m"), selected_year=anchor.year,
+        selected_agent=report["selected_employee"]["employee_key"] if report["selected_employee"] else "",
         available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
     )
 
@@ -607,8 +606,8 @@ def update_attendance_balance():
 def download_shopify_performance():
     selection = selected_reporting_period("daily")
     period, anchor = selection["period"], selection["anchor"]
-    report = shopify_sales_report(period, anchor)
-    label = str(anchor.year) if period == "yearly" else (anchor.isoformat() if period == "daily" else anchor.strftime("%Y-%m"))
+    report = shopify_sales_report(period, anchor, request.args.get("agent", "").strip())
+    label = str(anchor.year) if period == "yearly" else (anchor.strftime("%Y-%m") if period == "monthly" else anchor.isoformat())
     return send_file(
         performance_excel(report, request.args.get("product_field", "all"), request.args.get("product_query", "")), as_attachment=True,
         download_name=f"shopify-sales-performance-{period}-{label}.xlsx",
