@@ -244,9 +244,13 @@ def sales_report(period="daily", anchor=None):
     anchor = anchor or datetime.now(IST).date()
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
+    override_rows = shopify_targets_between(
+        period, date(anchor.year, anchor.month, 1).isoformat() if period != "monthly" else start.isoformat(),
+        date(anchor.year, anchor.month, 1).isoformat() if period != "monthly" else end.isoformat(),
+    )
     overrides = {
         (item["employee_key"], item["period_start"]): float(item["target_amount"])
-        for item in shopify_targets_between(period, start.isoformat(), end.isoformat())
+        for item in override_rows
     }
     configs = {item["employee_key"]: item for item in list_shopify_employees() if item["active"]}
     for item in sales:
@@ -276,7 +280,10 @@ def sales_report(period="daily", anchor=None):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        targets = [overrides.get((employee["employee_key"], column["start"].isoformat()), period_target) for column in columns]
+        targets = [
+            overrides.get((employee["employee_key"], (column["start"] if period == "monthly" else date(anchor.year, anchor.month, 1)).isoformat()), period_target)
+            for column in columns
+        ]
         total_target = sum(targets)
         total = sum(values)
         rows.append({
@@ -292,6 +299,14 @@ def sales_report(period="daily", anchor=None):
         item["display_name"],
     ))
     team_rows = [row for row in rows if row.get("include_in_team")]
+    ranked = sorted(
+        (row for row in team_rows if row["attainment"] is not None),
+        key=lambda item: (-item["attainment"], item["display_name"]),
+    )
+    top_keys = {row["employee_key"] for row in ranked[:3]}
+    bottom_keys = {row["employee_key"] for row in ranked[-3:]} - top_keys
+    for row in rows:
+        row["performance_band"] = "top" if row["employee_key"] in top_keys else ("bottom" if row["employee_key"] in bottom_keys else "")
     team_values = [sum(row["values"][i] for row in team_rows) for i in range(len(columns))]
     team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
     team_targets = [sum(row["targets"][i] for row in team_rows) for i in range(len(columns))]

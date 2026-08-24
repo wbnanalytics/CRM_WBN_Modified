@@ -1,0 +1,19 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-heading source-heading">
+  <div><span class="eyebrow">SHOPIFY / ADMINISTRATION</span><h1>Sales Targets</h1><p>Maintain employee targets for each reporting month.</p></div>
+  <form method="get" class="sales-period-form target-month-form"><label><span>Target month</span><input type="month" name="month" value="{{ selected_month }}"></label><button class="filter-button" type="submit">View month</button></form>
+</section>
+
+<section class="target-workflow-grid">
+  <article class="panel target-workflow-card"><span class="step-number">01</span><div><h2>Download template</h2><p>Includes all managed employees and their current daily, weekly and monthly targets.</p></div><a class="secondary-button" href="{{ url_for('download_shopify_target_template', month=selected_month) }}">Download template</a></article>
+  <article class="panel target-workflow-card"><span class="step-number">02</span><div><h2>Upload targets</h2><p>Daily and weekly values apply consistently throughout the selected month.</p></div><form method="post" action="{{ url_for('upload_shopify_targets') }}" enctype="multipart/form-data" class="target-upload-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="month" value="{{ selected_month }}"><label class="file-button">Choose .xlsx<input type="file" name="target_file" accept=".xlsx" required></label><button class="primary-button" type="submit">Upload targets</button></form></article>
+</section>
+
+<section class="panel target-editor-panel">
+  <div class="panel-head"><div><span class="eyebrow">{{ selected_month }}</span><h2>Edit current targets</h2></div><span class="count-badge">{{ rows|length }} employees</span></div>
+  <div class="table-wrap"><table class="target-table"><thead><tr><th>Employee</th><th>Role</th><th>Daily target</th><th>Weekly target</th><th>Monthly target</th><th></th></tr></thead><tbody>
+    {% for employee in rows %}{% set form_id = 'target-' ~ loop.index %}<tr><td><strong>{{ employee.display_name }}</strong></td><td>{{ employee.role }}</td><td><input form="{{ form_id }}" type="number" name="daily_target" min="0" step="0.01" value="{{ employee.daily_target|round(2) }}" required></td><td><input form="{{ form_id }}" type="number" name="weekly_target" min="0" step="0.01" value="{{ employee.weekly_target_value|round(2) }}" required></td><td><input form="{{ form_id }}" type="number" name="monthly_target" min="0" step="0.01" value="{{ employee.monthly_target|round(2) }}" required></td><td><form id="{{ form_id }}" method="post" action="{{ url_for('update_shopify_targets') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="month" value="{{ selected_month }}"><input type="hidden" name="employee_key" value="{{ employee.employee_key }}"><button class="table-action compact-action" type="submit">Save</button></form></td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
+{% endblock %}

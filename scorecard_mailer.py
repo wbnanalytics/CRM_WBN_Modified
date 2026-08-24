@@ -4,9 +4,85 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
+import requests
+
+
+def _mail_setting(*names, default=None):
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value.strip()
+    return default
+
+
+def _mail_config():
+    user = _mail_setting("CRM_USERNAME", "crm_username", "SMTP_USER")
+    password = _mail_setting("CRM_PASSWORD", "crm_password", "SMTP_PASS")
+    sender = _mail_setting("CRM_FROM", "crm_from", "SMTP_FROM", default=user)
+    return {
+        "host": _mail_setting("CRM_SMTP_HOST", "crm_smtp_host", "SMTP_HOST", default="smtp.office365.com"),
+        "port": int(_mail_setting("CRM_SMTP_PORT", "crm_smtp_port", "SMTP_PORT", default="587")),
+        "user": user,
+        "password": password,
+        "sender": sender,
+    }
+
 
 def email_ready():
-    return all(os.getenv(key) for key in ("SMTP_HOST", "SMTP_USER", "SMTP_PASS", "SMTP_FROM"))
+    config = _mail_config()
+    smtp_ready = all(config[key] for key in ("host", "user", "password", "sender"))
+    graph_ready = bool(
+        config["sender"] and os.getenv("AZURE_TENANT_ID")
+        and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
+    )
+    return smtp_ready or graph_ready
+
+
+def _send_graph(subject, body, plain_text, recipient, sender):
+    token_response = requests.post(
+        f"https://login.microsoftonline.com/{os.environ['AZURE_TENANT_ID']}/oauth2/v2.0/token",
+        data={
+            "client_id": os.environ["AZURE_CLIENT_ID"],
+            "client_secret": os.environ["AZURE_CLIENT_SECRET"],
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        },
+        timeout=30,
+    )
+    token_response.raise_for_status()
+    access_token = token_response.json().get("access_token")
+    if not access_token:
+        raise RuntimeError("Microsoft Graph did not issue an access token")
+    response = requests.post(
+        f"https://graph.microsoft.com/v1.0/users/{sender}/sendMail",
+        headers={"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"},
+        json={
+            "message": {
+                "subject": subject,
+                "body": {"contentType": "HTML", "content": body},
+                "toRecipients": [{"emailAddress": {"address": recipient}}],
+            },
+            "saveToSentItems": True,
+        },
+        timeout=30,
+    )
+    if response.status_code != 202:
+        raise RuntimeError(f"Microsoft Graph rejected the message ({response.status_code})")
+
+
+def _send_smtp(subject, body, plain_text, recipient, config):
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = config["sender"]
+    message["To"] = recipient
+    message.set_content(plain_text)
+    message.add_alternative(body, subtype="html")
+    with smtplib.SMTP(config["host"], config["port"], timeout=30) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=ssl.create_default_context())
+        smtp.ehlo()
+        smtp.login(config["user"], config["password"])
+        smtp.send_message(message)
 
 
 def _score_rows(record):
@@ -48,16 +124,17 @@ def send_record_email(record_type, record, recipient):
         <table style="width:100%;border-collapse:collapse" cellpadding="8"><thead><tr style="background:#f5f4ed"><th style="text-align:left">Criteria</th><th style="text-align:right">Result</th><th style="text-align:right">Maximum</th></tr></thead>
         <tbody>{_score_rows(record)}</tbody></table>
         <p style="margin-top:22px">Regards,<br>Wellbeing Nutrition</p></div></div></body></html>"""
-    message = EmailMessage()
-    message["Subject"] = subject
-    message["From"] = os.environ["SMTP_FROM"]
-    message["To"] = recipient
-    message.set_content(f"{subject}\n\nOverall result: {total}\n\nRegards,\nWellbeing Nutrition")
-    message.add_alternative(body, subtype="html")
-    host, port = os.environ["SMTP_HOST"], int(os.getenv("SMTP_PORT", "587"))
-    with smtplib.SMTP(host, port, timeout=30) as smtp:
-        smtp.ehlo()
-        smtp.starttls(context=ssl.create_default_context())
-        smtp.ehlo()
-        smtp.login(os.environ["SMTP_USER"], os.environ["SMTP_PASS"])
-        smtp.send_message(message)
+    config = _mail_config()
+    plain_text = f"{subject}\n\nOverall result: {total}\n\nRegards,\nWellbeing Nutrition"
+    graph_ready = bool(
+        config["sender"] and os.getenv("AZURE_TENANT_ID")
+        and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
+    )
+    if graph_ready:
+        try:
+            _send_graph(subject, body, plain_text, recipient, config["sender"])
+            return
+        except Exception:
+            if not all(config[key] for key in ("host", "user", "password", "sender")):
+                raise
+    _send_smtp(subject, body, plain_text, recipient, config)

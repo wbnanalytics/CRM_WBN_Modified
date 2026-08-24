@@ -10,6 +10,7 @@
     <span class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
       {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at|ist_datetime }}{% else %}Awaiting first sync{% endif %}
     </span>
+    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, month=selected_month, year=selected_year) }}">Download Excel</a>
   </div>
 </section>
 
@@ -56,10 +57,10 @@
           <td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
         </tr>
         {% for employee in report.rows if employee.include_in_team %}
-        <tr>
+        <tr class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
           <td><strong>{{ employee.display_name }}</strong></td>
           <td>{{ employee.role }}</td>
-          {% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}{% if is_admin %}<button type="button" class="target-edit-button" data-edit-target data-employee-key="{{ employee.employee_key }}" data-employee-name="{{ employee.display_name }}" data-period="{{ period }}" data-period-start="{{ report.columns[loop.index0]['start'].isoformat() }}" data-period-label="{{ report.columns[loop.index0].label }}" data-target="{{ employee.targets[loop.index0] }}" aria-label="Edit target for {{ employee.display_name }}, {{ report.columns[loop.index0].label }}">Edit</button>{% endif %}</span></td>{% endfor %}
+          {% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span></td>{% endfor %}
           <td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td>
           <td>{% if employee.attainment is not none %}<span class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{ (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
         </tr>
@@ -69,16 +70,4 @@
   </div>
 </section>
 
-{% if is_admin %}
-<dialog class="target-dialog" id="targetDialog">
-  <form data-target-form data-csrf="{{ csrf_token() }}">
-    <div class="dialog-head"><div><span class="eyebrow">SALES TARGET</span><h2>Edit target</h2></div><button type="button" class="icon-button" data-close-target aria-label="Close">×</button></div>
-    <p class="target-context"><strong data-target-employee></strong><span data-target-period></span></p>
-    <input type="hidden" name="employee_key"><input type="hidden" name="period"><input type="hidden" name="period_start">
-    <label class="target-amount-field"><span>Target amount (₹)</span><input name="target_amount" type="number" min="0" step="0.01" required></label>
-    <p class="form-message" data-target-message></p>
-    <div class="dialog-actions"><button type="button" class="secondary-button" data-close-target>Cancel</button><button type="submit" class="primary-button">Save target</button></div>
-  </form>
-</dialog>
-{% endif %}
 {% endblock %}

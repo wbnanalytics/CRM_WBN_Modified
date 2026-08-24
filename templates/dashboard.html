@@ -1,41 +1,35 @@
 {% extends "layout.html" %}
 {% block content %}
-<section class="page-heading">
-  <div><span class="eyebrow">CS METRIC</span><h1>Good morning, team.</h1><p>Your customer support picture, ready for review.</p></div>
+<section class="page-heading sales-dashboard-heading">
+  <div><span class="eyebrow">SALES INTELLIGENCE</span><h1>Sales Dashboard</h1><p>A clear view of Shopify employee performance, targets and attainment.</p></div>
   <div class="heading-actions">
-    <div class="sync-control">
-      <button class="primary-button sync-all-button" type="button" data-sync-all data-csrf="{{ csrf_token() }}">Refresh All Data</button>
-      <small data-sync-message>Zoho, BIK and Shopify</small>
-    </div>
-    {% include '_date_filter.html' %}
+    <div class="sync-control"><button class="primary-button sync-all-button" type="button" data-sync-all data-csrf="{{ csrf_token() }}">Refresh all data</button><small data-sync-message>Updates every connected source</small></div>
+    <form class="dashboard-month-filter" method="get"><label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label><button class="filter-button" type="submit">Apply</button></form>
   </div>
 </section>
-<section class="metric-grid" aria-label="Metric summary">
-  <article class="metric-card featured"><div class="metric-top"><span>Total tickets</span><span class="trend neutral">Live data</span></div><strong>{{ total }}</strong><p>{{ start.strftime('%d %b') }} – {{ end.strftime('%d %b %Y') }}</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Resolved</span><span class="metric-symbol sage">✓</span></div><strong>{{ resolved }}</strong><p>{{ resolution_rate }}% resolution rate</p></article>
-  <article class="metric-card"><div class="metric-top"><span>BIK first response</span><span class="metric-symbol amber">◷</span></div><strong>{{ (bik_metrics.avg_frt_seconds / 60)|round(1) }}m</strong><p>Average first response</p></article>
-  <article class="metric-card"><div class="metric-top"><span>BIK CSAT</span><span class="metric-symbol blue">★</span></div><strong>{{ bik_metrics.csat_score }}%</strong><p>{{ bik_metrics.csat_responses }} responses</p></article>
+
+<section class="metric-grid sales-metric-grid" aria-label="Sales summary">
+  <article class="metric-card featured"><div class="metric-top"><span>Managed team sales</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{ '{:,}'.format(report.team.orders) }}</strong><p>Orders assigned to managed employees</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Selected target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Weekly targets for this month</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Attainment</span><span class="metric-symbol blue">↗</span></div><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong><p>Team sales against target</p></article>
 </section>
-<section class="dashboard-grid">
-  <article class="panel performance-panel">
-    <div class="panel-head"><div><span class="eyebrow">OVERVIEW</span><h2>Service performance</h2></div><span class="count-badge">Selected period</span></div>
-    <div class="empty-chart"><div class="chart-art" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><h3>{{ zoho_metrics.total }} Zoho + {{ bik_metrics.total }} BIK tickets</h3><p>{{ bik_metrics.messages }} BIK messages across {{ bik_metrics.conversations }} conversations in this period.</p></div>
+
+<section class="sales-dashboard-grid">
+  <article class="panel sales-trend-panel">
+    <div class="panel-head"><div><span class="eyebrow">WEEKLY TREND</span><h2>Sales against target</h2></div><a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period='weekly', month=selected_month) }}">Download Excel</a></div>
+    <div class="weekly-trend" role="img" aria-label="Weekly sales compared with targets">
+      {% for column in report.columns %}
+      <div class="trend-row"><div class="trend-label"><strong>{{ column.label }}</strong><span>{{ report.team['values'][loop.index0]|inr }}</span></div><div class="trend-bars"><i class="target-bar" style="width:{{ ((report.team['targets'][loop.index0] / max_weekly) * 100)|round(1) }}%"></i><i class="sales-bar" style="width:{{ ((report.team['values'][loop.index0] / max_weekly) * 100)|round(1) }}%"></i></div><small>Target {{ report.team['targets'][loop.index0]|inr }}</small></div>
+      {% endfor %}
+    </div>
+    <div class="chart-legend"><span><i class="sales-key"></i>Sales</span><span><i class="target-key"></i>Target</span></div>
   </article>
-  <aside class="panel sources-panel">
-    <div class="panel-head"><div><span class="eyebrow">DATA SOURCES</span><h2>Connections</h2></div></div>
-    {% for key, source in sources.items() %}
-    <a class="connection-row" href="{{ url_for(key) }}"><span class="source-icon {{ key }}">{{ source.name[0] }}</span><span class="connection-copy"><strong>{{ source.name }}</strong><small>{{ source.reports|length }} reports</small></span><span class="status {{ connector_status(key) }}"><i></i>{{ 'Configured' if connector_status(key) == 'configured' else 'Setup needed' }}</span></a>
-    {% endfor %}
+  <aside class="performer-stack">
+    <article class="panel performer-panel top-list"><div class="panel-head"><div><span class="eyebrow">LEADERS</span><h2>Top performers</h2></div><span class="rank-badge positive">Top 3</span></div>{% for employee in top_performers %}<a class="performer-row" href="{{ url_for('shopify', period='weekly', month=selected_month) }}"><span class="rank-number">{{ loop.index }}</span><span><strong>{{ employee.display_name }}</strong><small>{{ employee.role }}</small></span><b>{{ (employee.attainment * 100)|round(1) }}%</b></a>{% else %}<p class="empty-state">No performance data for this month.</p>{% endfor %}</article>
+    <article class="panel performer-panel bottom-list"><div class="panel-head"><div><span class="eyebrow">NEEDS ATTENTION</span><h2>Lowest attainment</h2></div><span class="rank-badge negative">Bottom 3</span></div>{% for employee in bottom_performers %}<a class="performer-row" href="{{ url_for('shopify', period='weekly', month=selected_month) }}"><span class="rank-number">{{ loop.index }}</span><span><strong>{{ employee.display_name }}</strong><small>{{ employee.role }}</small></span><b>{{ (employee.attainment * 100)|round(1) }}%</b></a>{% else %}<p class="empty-state">No performance data for this month.</p>{% endfor %}</article>
   </aside>
 </section>
-<section class="panel report-panel">
-  <div class="panel-head"><div><span class="eyebrow">REPORTS</span><h2>Automatic imports</h2></div></div>
-  <div class="table-wrap"><table><thead><tr><th>Report</th><th>Source</th><th>Last updated</th><th>Status</th><th></th></tr></thead><tbody>
-    <tr><td><strong>Customer Experience</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
-    <tr><td><strong>Escalation Queue</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
-    <tr><td><strong>Customer Ticket Report</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
-    <tr><td><strong>All Conversations</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
-    <tr><td><strong>Employee Sales</strong></td><td><span class="table-source shopify">S</span> Shopify</td><td>Every hour</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('shopify') }}">Open →</a></td></tr>
-  </tbody></table></div>
-</section>
+
+<section class="panel sales-actions-panel"><div><span class="eyebrow">SALES REPORTING</span><h2>Continue working</h2><p>Review the complete employee matrix or maintain this month’s targets.</p></div><div class="sales-action-links"><a class="primary-button" href="{{ url_for('shopify', period='weekly', month=selected_month) }}">Open sales report</a>{% if is_admin %}<a class="outline-button" href="{{ url_for('shopify_targets', month=selected_month) }}">Manage targets</a>{% endif %}</div></section>
 {% endblock %}

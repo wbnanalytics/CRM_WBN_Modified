@@ -138,6 +138,24 @@
   background: #eaf2e7;
 }
 
+.sales-matrix tr.top-performer td {
+  background: #edf8ef;
+  box-shadow: inset 0 1px #d8eddd, inset 0 -1px #d8eddd;
+}
+
+.sales-matrix tr.top-performer td:first-child {
+  border-left: 4px solid #45a160;
+}
+
+.sales-matrix tr.bottom-performer td {
+  background: #fff2ef;
+  box-shadow: inset 0 1px #f1ddd8, inset 0 -1px #f1ddd8;
+}
+
+.sales-matrix tr.bottom-performer td:first-child {
+  border-left: 4px solid #c96b5a;
+}
+
 .sales-value,
 .cell-target {
   display: block;
@@ -278,6 +296,268 @@
   margin: 10px 0 0;
 }
 
+.sub-nav-item {
+  margin-left: 18px;
+}
+
+.target-workflow-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 22px;
+}
+
+.target-workflow-card {
+  align-items: center;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: auto 1fr auto;
+  padding: 22px;
+}
+
+.target-workflow-card h2 {
+  font-size: 18px;
+  margin: 0 0 5px;
+}
+
+.target-workflow-card p {
+  color: #718078;
+  font-size: 12px;
+  margin: 0;
+}
+
+.step-number {
+  align-items: center;
+  background: #e8f0df;
+  border-radius: 12px;
+  color: #305846;
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  height: 42px;
+  justify-content: center;
+  width: 42px;
+}
+
+.target-upload-form {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.file-button {
+  background: #fff;
+  border: 1px solid #cbd7cf;
+  border-radius: 10px;
+  color: #244c3e;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 11px 13px;
+  white-space: nowrap;
+}
+
+.file-button input {
+  display: none;
+}
+
+.target-editor-panel {
+  margin-bottom: 30px;
+}
+
+.target-table input[type="number"] {
+  background: #fff;
+  border: 1px solid #d6ded8;
+  border-radius: 9px;
+  color: #17382d;
+  font: 700 12px "DM Sans", sans-serif;
+  min-width: 125px;
+  padding: 9px 10px;
+  width: 100%;
+}
+
+.compact-action {
+  margin: 0;
+  min-width: 68px;
+}
+
+.sync-stamp {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.export-button {
+  font-size: 11px;
+  padding: 10px 14px;
+  text-decoration: none;
+}
+
+.dashboard-month-filter {
+  align-items: end;
+  background: #fff;
+  border: 1px solid #dde3dc;
+  border-radius: 14px;
+  display: flex;
+  gap: 8px;
+  padding: 10px;
+}
+
+.dashboard-month-filter label {
+  color: #7a8981;
+  display: grid;
+  font-size: 9px;
+  font-weight: 800;
+  gap: 5px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.dashboard-month-filter input {
+  border: 1px solid #d7ded8;
+  border-radius: 9px;
+  color: #18372d;
+  font: 700 12px "DM Sans", sans-serif;
+  padding: 9px 10px;
+}
+
+.sales-dashboard-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: minmax(0, 1.65fr) minmax(310px, .75fr);
+  margin: 22px 0;
+}
+
+.sales-trend-panel,
+.performer-panel,
+.sales-actions-panel {
+  padding: 24px;
+}
+
+.weekly-trend {
+  display: grid;
+  gap: 19px;
+  margin-top: 28px;
+}
+
+.trend-row {
+  align-items: center;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 145px minmax(160px, 1fr) 120px;
+}
+
+.trend-label strong,
+.trend-label span {
+  display: block;
+}
+
+.trend-label strong {
+  color: #718078;
+  font-size: 10px;
+  margin-bottom: 4px;
+}
+
+.trend-label span {
+  color: #17382d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.trend-row > small {
+  color: #849189;
+  font-size: 9px;
+  text-align: right;
+}
+
+.trend-bars {
+  background: #edf1ec;
+  border-radius: 99px;
+  display: grid;
+  height: 16px;
+  overflow: hidden;
+  position: relative;
+}
+
+.trend-bars i {
+  border-radius: 99px;
+  grid-area: 1/1;
+}
+
+.target-bar { background: #cbd8ce; }
+.sales-bar { background: #22634f; height: 8px; margin-top: 4px; }
+
+.chart-legend {
+  display: flex;
+  gap: 18px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.chart-legend span {
+  align-items: center;
+  color: #7a8981;
+  display: flex;
+  font-size: 9px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.chart-legend i {
+  border-radius: 99px;
+  height: 8px;
+  width: 8px;
+}
+
+.sales-key { background: #22634f; }
+.target-key { background: #cbd8ce; }
+.performer-stack { display: grid; gap: 20px; }
+.performer-panel .panel-head { margin-bottom: 8px; }
+.performer-panel h2 { font-size: 18px; }
+
+.rank-badge {
+  border-radius: 99px;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 7px 9px;
+}
+
+.rank-badge.positive { background: #e2f1e5; color: #387148; }
+.rank-badge.negative { background: #f9e5e1; color: #a04e43; }
+
+.performer-row {
+  align-items: center;
+  border-top: 1px solid #edf0eb;
+  color: #18372d;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 28px 1fr auto;
+  padding: 12px 0;
+  text-decoration: none;
+}
+
+.performer-row strong,
+.performer-row small { display: block; }
+.performer-row strong { font-size: 11px; }
+.performer-row small { color: #8a968f; font-size: 9px; margin-top: 3px; }
+.performer-row b { font-size: 11px; }
+.rank-number { align-items: center; background: #edf3e9; border-radius: 8px; display: flex; font-size: 10px; font-weight: 800; height: 27px; justify-content: center; }
+.bottom-list .rank-number { background: #f8e9e6; color: #9e5146; }
+.empty-state { color: #87938c; font-size: 11px; }
+
+.sales-actions-panel {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 28px;
+}
+
+.sales-actions-panel h2 { font-size: 20px; margin: 7px 0 4px; }
+.sales-actions-panel p { color: #7b8982; font-size: 11px; margin: 0; }
+.sales-action-links { display: flex; gap: 9px; }
+.sales-action-links a { text-decoration: none; }
+
 @media (max-width: 760px) {
   .heading-actions,
   .shopify-toolbar,
@@ -292,5 +572,37 @@
 
   .sales-tabs {
     overflow-x: auto;
+  }
+
+  .target-workflow-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .trend-row {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .trend-row > small {
+    text-align: left;
+  }
+
+  .sales-actions-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .target-workflow-card {
+    align-items: stretch;
+    grid-template-columns: auto 1fr;
+  }
+
+  .target-workflow-card > :last-child {
+    grid-column: 1 / -1;
   }
 }

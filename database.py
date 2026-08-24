@@ -748,6 +748,36 @@ def set_shopify_target(employee_key, period_type, period_start, target_amount, u
     return amount
 
 
+def bulk_set_shopify_targets(targets, updated_by):
+    now = utc_now()
+    with db_connection() as db:
+        active_keys = {row["employee_key"] for row in db.execute(
+            "SELECT employee_key FROM shopify_employee_config WHERE active=1"
+        ).fetchall()}
+        for item in targets:
+            if item["employee_key"] not in active_keys:
+                raise ValueError(f"Unknown employee: {item['employee_key']}")
+            if item["period_type"] not in {"daily", "weekly", "monthly"}:
+                raise ValueError("Invalid target period")
+            if float(item["target_amount"]) < 0:
+                raise ValueError("Target cannot be negative")
+        db.executemany(
+            """INSERT INTO shopify_sales_targets
+               (employee_key, period_type, period_start, target_amount, updated_by, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(employee_key, period_type, period_start) DO UPDATE SET
+                 target_amount=excluded.target_amount,
+                 updated_by=excluded.updated_by,
+                 updated_at=excluded.updated_at""",
+            [
+                (item["employee_key"], item["period_type"], item["period_start"],
+                 float(item["target_amount"]), updated_by, now)
+                for item in targets
+            ],
+        )
+    return len(targets)
+
+
 def queue_sync_request(requested_by):
     now = utc_now()
     with db_connection() as db:

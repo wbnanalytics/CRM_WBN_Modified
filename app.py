@@ -13,15 +13,17 @@ from dotenv import load_dotenv
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
-    PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, get_portal_permissions, get_portal_user, init_db,
-    latest_sync_request, list_portal_users, queue_sync_request, recent_sync_runs,
-    save_portal_user, set_portal_permissions, set_shopify_target, zoho_metrics,
+    PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, bulk_set_shopify_targets,
+    get_portal_permissions, get_portal_user, init_db, latest_sync_request,
+    list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
+    save_portal_user, set_portal_permissions, shopify_targets_between, zoho_metrics,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
 from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
+from shopify_targets_io import performance_excel, read_target_upload, target_template
 
 
 load_dotenv()
@@ -135,7 +137,7 @@ def msal_app():
 
 @app.before_request
 def require_production_login():
-    public = {"index", "microsoft_login", "microsoft_callback", "health", "static"}
+    public = {"index", "microsoft_login", "microsoft_callback", "health", "favicon", "static"}
     if os.getenv("APP_ENV") == "production" and request.endpoint not in public and not session.get("user"):
         return redirect(url_for("index"))
     if session.get("user") and request.endpoint not in public:
@@ -244,7 +246,7 @@ def test_bik_auth():
 @app.context_processor
 def inject_globals():
     return {
-        "current_year": datetime.now(timezone.utc).year,
+        "current_year": datetime.now(IST).year,
         "connector_status": connector_status,
         "is_admin": session.get("user", {}).get("role") == "admin",
         "is_super_admin": is_super_admin(),
@@ -300,6 +302,11 @@ def index():
     return render_template("login.html", microsoft_ready=microsoft_ready())
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("wbn-favicon.png")
+
+
 @app.route("/auth/microsoft")
 def microsoft_login():
     if not microsoft_ready():
@@ -325,12 +332,23 @@ def logout():
 @app.route("/dashboard")
 @permission_required("dashboard")
 def dashboard():
-    start, end, preset = selected_range()
-    zoho_data = zoho_metrics(start.isoformat(), end.isoformat())
-    bik_data = bik_metrics(start.isoformat(), end.isoformat())
-    total = zoho_data["total"] + bik_data["total"]
-    resolved = zoho_data["resolved"] + bik_data["resolved"]
-    return render_template("dashboard.html", active_page="dashboard", page_title="CS Metric Dashboard", sources=REPORT_SOURCES, zoho_metrics=zoho_data, bik_metrics=bik_data, total=total, resolved=resolved, resolution_rate=round(resolved / total * 100, 1) if total else 0, start=start, end=end, preset=preset, date_presets=DATE_PRESETS, sync_runs=recent_sync_runs(5))
+    seed_default_employees()
+    today = datetime.now(IST).date()
+    try:
+        month = request.args.get("month", today.strftime("%Y-%m"))
+        anchor = date.fromisoformat(f"{month}-01")
+    except (TypeError, ValueError):
+        anchor = date(today.year, today.month, 1)
+    report = shopify_sales_report("weekly", anchor)
+    managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
+    top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
+    bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
+    return render_template(
+        "dashboard.html", active_page="dashboard", page_title="Sales Dashboard",
+        report=report, top_performers=top_performers, bottom_performers=bottom_performers,
+        selected_month=anchor.strftime("%Y-%m"),
+        max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
+    )
 
 
 @app.route("/zoho")
@@ -387,6 +405,26 @@ def shopify():
     )
 
 
+@app.route("/shopify/performance.xlsx")
+@permission_required("shopify.view")
+def download_shopify_performance():
+    period = request.args.get("period", "daily")
+    if period not in {"daily", "weekly", "monthly"}:
+        period = "daily"
+    today = datetime.now(IST).date()
+    try:
+        anchor = date(int(request.args.get("year", today.year)), 1, 1) if period == "monthly" else date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+    except (TypeError, ValueError):
+        anchor = date(today.year, today.month, 1)
+    report = shopify_sales_report(period, anchor)
+    label = str(anchor.year) if period == "monthly" else anchor.strftime("%Y-%m")
+    return send_file(
+        performance_excel(report), as_attachment=True,
+        download_name=f"shopify-sales-performance-{period}-{label}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.route("/api/sync/all", methods=["POST"])
 @permission_required("dashboard")
 def request_full_sync():
@@ -415,26 +453,90 @@ def full_sync_status():
     return jsonify(latest_sync_request() or {"status": "idle"})
 
 
-@app.route("/api/shopify/targets", methods=["POST"])
-@admin_required
-def save_shopify_target():
-    require_json_csrf()
-    payload = request.get_json(silent=True) or {}
+def selected_target_month():
+    today = datetime.now(IST).date()
     try:
-        period = str(payload.get("period") or "")
-        period_start = date.fromisoformat(str(payload.get("period_start") or ""))
-        if period == "weekly" and period_start.weekday() != 0:
-            raise ValueError("Weekly targets must begin on Monday")
-        if period == "monthly" and period_start.day != 1:
-            raise ValueError("Monthly targets must begin on the first day")
-        amount = set_shopify_target(
-            str(payload.get("employee_key") or ""), period,
-            period_start.isoformat(), payload.get("target_amount"),
-            session["user"]["email"],
-        )
+        return date.fromisoformat(f"{request.values.get('month', today.strftime('%Y-%m'))}-01")
+    except (TypeError, ValueError):
+        return date(today.year, today.month, 1)
+
+
+def target_management_rows(month_start):
+    seed_default_employees()
+    employees = [item for item in list_shopify_employees() if item["active"] and item["include_in_team"]]
+    overrides = {}
+    for period in ("daily", "weekly", "monthly"):
+        for item in shopify_targets_between(period, month_start.isoformat(), month_start.isoformat()):
+            overrides[(item["employee_key"], period)] = float(item["target_amount"])
+    rows = []
+    for employee in employees:
+        weekly = float(employee["weekly_target"] or 0)
+        rows.append({
+            **employee,
+            "daily_target": overrides.get((employee["employee_key"], "daily"), weekly / 5.5),
+            "weekly_target_value": overrides.get((employee["employee_key"], "weekly"), weekly),
+            "monthly_target": overrides.get((employee["employee_key"], "monthly"), weekly * 4),
+        })
+    return rows, overrides
+
+
+@app.route("/shopify/targets")
+@admin_required
+def shopify_targets():
+    month_start = selected_target_month()
+    rows, _ = target_management_rows(month_start)
+    return render_template(
+        "shopify_targets.html", active_page="shopify_targets", page_title="Shopify Targets",
+        rows=rows, selected_month=month_start.strftime("%Y-%m"),
+    )
+
+
+@app.route("/shopify/targets/update", methods=["POST"])
+@admin_required
+def update_shopify_targets():
+    require_csrf()
+    month_start = selected_target_month()
+    employee_key = request.form.get("employee_key", "").strip()
+    try:
+        targets = [
+            {"employee_key": employee_key, "period_type": period,
+             "period_start": month_start.isoformat(), "target_amount": request.form.get(f"{period}_target")}
+            for period in ("daily", "weekly", "monthly")
+        ]
+        bulk_set_shopify_targets(targets, session["user"]["email"])
+        flash("Targets updated.", "success")
     except (TypeError, ValueError) as exc:
-        return jsonify({"error": str(exc) or "Invalid target"}), 400
-    return jsonify({"status": "success", "target_amount": amount})
+        flash(str(exc), "error")
+    return redirect(url_for("shopify_targets", month=month_start.strftime("%Y-%m")))
+
+
+@app.route("/shopify/targets/template.xlsx")
+@admin_required
+def download_shopify_target_template():
+    month_start = selected_target_month()
+    rows, overrides = target_management_rows(month_start)
+    return send_file(
+        target_template(rows, month_start, overrides), as_attachment=True,
+        download_name=f"shopify-sales-targets-{month_start.strftime('%Y-%m')}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/shopify/targets/upload", methods=["POST"])
+@admin_required
+def upload_shopify_targets():
+    require_csrf()
+    month_start = selected_target_month()
+    upload = request.files.get("target_file")
+    try:
+        if not upload or not upload.filename.lower().endswith(".xlsx"):
+            raise ValueError("Choose the completed .xlsx target template")
+        rows = read_target_upload(upload, month_start.isoformat())
+        count = bulk_set_shopify_targets(rows, session["user"]["email"])
+        flash(f"{count // 3} employee targets uploaded.", "success")
+    except (TypeError, ValueError) as exc:
+        flash(str(exc), "error")
+    return redirect(url_for("shopify_targets", month=month_start.strftime("%Y-%m")))
 
 
 @app.route("/scorecard")
