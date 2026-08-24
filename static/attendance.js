@@ -13,7 +13,6 @@ document.querySelectorAll('.attendance-status-select').forEach((select) => {
   select.addEventListener('change', async () => {
     const previous = select.dataset.original || '';
     const status = select.value;
-    if (!['P', 'A'].includes(status)) return;
     select.disabled = true;
     select.classList.add('saving');
     try {
@@ -31,7 +30,12 @@ document.querySelectorAll('.attendance-status-select').forEach((select) => {
       if (!response.ok) throw new Error(result.error || 'Attendance update failed');
       select.dataset.original = status;
       select.className = `attendance-status-select status-${status.toLowerCase()}`;
-      attendanceToast(status === 'P' ? 'Marked Present' : 'Marked Absent');
+      const rowInputs = [...document.querySelectorAll(`.leave-balance-input[data-employee-key="${select.dataset.employeeKey}"]`)];
+      rowInputs.forEach((item) => {
+        item.value = item.dataset.balanceKind === 'pl' ? result.pl_balance : result.sl_balance;
+        item.dataset.original = item.value;
+      });
+      attendanceToast(`Attendance marked ${status || 'blank'}`);
     } catch (error) {
       select.value = previous;
       attendanceToast(error.message || 'Attendance update failed', true);

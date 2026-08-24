@@ -16,11 +16,16 @@ SYSTEM_AGENTS = {"unassigned", "bot", "wellbeing nutrition", "wellbeing nutritio
 
 def tagged_general(raw):
     """Treat an exact General classification/tag/disposition as spam."""
-    for key in ("category", "subCategory", "disposition", "Disposition", "tag", "tags", "Ticket label"):
-        value = raw.get(key)
-        values = value if isinstance(value, list) else [value]
-        if any(str(item or "").strip().lower() == "general" for item in values):
-            return True
+    keys = ("category", "subCategory", "disposition", "Disposition", "Disposition Category",
+            "Type", "tag", "tags", "Ticket label", "cf_disposition_category", "cf_tyoe")
+    for container in (raw, raw.get("customFields") or {}, raw.get("cf") or {}):
+        if not isinstance(container, dict):
+            continue
+        for key in keys:
+            value = container.get(key)
+            values = value if isinstance(value, list) else [value]
+            if any(str(item or "").strip().lower() == "general" for item in values):
+                return True
     return False
 
 
@@ -56,7 +61,7 @@ def working_hours(value):
 def bucket():
     return {"total": 0, "resolved": 0, "open": 0, "escalated": 0, "spam": 0,
             "genuine": 0, "untagged": 0, "working_hours": 0, "outside_hours": 0,
-            "reply_10_12": 0, "frt_all": [], "frt_clean": [], "art_all": [],
+            "agent_replies": 0, "frt_all": [], "frt_clean": [], "art_all": [],
             "art_clean": [], "aht_all": [], "aht_clean": [], "csat_received": 0,
             "csat_positive": 0, "csat_negative": 0, "bot_handled": 0,
             "bot_resolved": 0, "human_handover": 0, "instagram_dm": 0,
@@ -83,7 +88,7 @@ def finish(values):
     return result
 
 
-def cs_dashboard(start_date, end_date):
+def cs_dashboard(start_date, end_date, selected_agent=None):
     labels = {"email": ("Email", "Zoho Desk"), "inbound": ("Inbound", "Zoho Desk"),
               "chats": ("Chats", "BIK"), "orm": ("ORM", "BIK")}
     overall = {key: bucket() for key in labels}
@@ -92,7 +97,7 @@ def cs_dashboard(start_date, end_date):
         zoho = db.execute("""SELECT channel,status,status_type,closed_time,created_time,raw_json
             FROM zoho_tickets WHERE created_local_date BETWEEN ? AND ?""", (start_date, end_date)).fetchall()
         bik = db.execute("""SELECT channel,ticket_stage,agent_name,closure_seconds,first_response_seconds,
-            human_response_seconds,csat_response,csat_sentiment,raw_json FROM bik_tickets
+            human_response_seconds,agent_messages,csat_response,csat_sentiment,raw_json FROM bik_tickets
             WHERE local_date BETWEEN ? AND ?""", (start_date, end_date)).fetchall()
 
     for row in zoho:
@@ -106,16 +111,32 @@ def cs_dashboard(start_date, end_date):
         is_escalated = status in {"escalated", "on hold", "onhold"}
         subcategory = str(raw.get("subCategory") or "").strip()
         is_spam = bool(raw.get("isSpam")) or subcategory.lower() in SPAM_SUBCATEGORIES or tagged_general(raw)
-        untagged = not subcategory or subcategory == "-"
+        untagged = not is_spam and (not subcategory or subcategory == "-")
         in_hours = working_hours(row["created_time"])
-        replies = max(int(raw.get("threadCount") or 0) - 1, 0)
+        replies = int(raw.get("_agentReplyCount") or 0)
+        frt = raw.get("_firstResponseSeconds")
+        art = raw.get("_averageResponseSeconds")
+        happiness = raw.get("customerHappiness")
+        if isinstance(happiness, dict):
+            happiness = happiness.get("rating") or happiness.get("value") or happiness.get("status")
+        happiness_text = str(happiness or "").strip().lower()
+        has_csat = bool(happiness_text and happiness_text not in {"none", "null", "unrated"})
+        positive_csat = happiness_text in {"positive", "happy", "satisfied", "good", "excellent", "5", "4"}
         targets = (overall[key], agents[key][zoho_agent(raw)])
         for target in targets:
             add_common(target, is_resolved, is_spam, is_escalated)
             target["working_hours" if in_hours else "outside_hours"] += 1
-            target["reply_10_12"] += int(10 <= replies <= 12)
+            target["agent_replies"] += replies
             target["genuine"] += int(not is_spam and not untagged)
             target["untagged"] += int(untagged)
+            if has_csat:
+                target["csat_received"] += 1
+                target["csat_positive" if positive_csat else "csat_negative"] += 1
+            for value, all_name, clean_name in ((frt, "frt_all", "frt_clean"), (art, "art_all", "art_clean")):
+                if value is not None and float(value) >= 0:
+                    target[all_name].append(value)
+                    if not is_spam:
+                        target[clean_name].append(value)
 
     for row in bik:
         channel = (row["channel"] or "").lower()
@@ -132,6 +153,7 @@ def cs_dashboard(start_date, end_date):
         for target in targets:
             add_common(target, is_resolved, is_spam, is_escalated)
             target["genuine"] += int(not is_spam)
+            target["agent_replies"] += int(row["agent_messages"] or 0)
         if key == "chats":
             system = name.lower() in SYSTEM_AGENTS
             overall[key]["bot_handled"] += int(system)
@@ -159,19 +181,24 @@ def cs_dashboard(start_date, end_date):
                 target["csat_received"] += 1
                 target["csat_positive" if positive else "csat_negative"] += 1
 
+    available_agents = sorted({name for channel_agents in agents.values() for name in channel_agents})
+    selected_agent = selected_agent if selected_agent in available_agents else None
     channels = {}
     for key, (label, source) in labels.items():
-        channels[key] = {"key": key, "label": label, "source": source, **finish(overall[key])}
+        values = agents[key].get(selected_agent, bucket()) if selected_agent else overall[key]
+        channels[key] = {"key": key, "label": label, "source": source, **finish(values)}
         channels[key]["agents"] = sorted(
-            ({"name": name, **finish(values)} for name, values in agents[key].items()),
+            ({"name": name, **finish(agent_values)} for name, agent_values in agents[key].items()
+             if not selected_agent or name == selected_agent),
             key=lambda item: (-item["total"], item["name"]))
     metrics = list(channels.values())
     return {"start": start_date, "end": end_date, "channels": channels, "metrics": metrics,
+            "available_agents": available_agents, "selected_agent": selected_agent,
             "agents": [], "total": sum(x["total"] for x in metrics),
             "resolved": sum(x["resolved"] for x in metrics), "spam": sum(x["spam"] for x in metrics)}
 
 
-def cs_detail_rows(start_date, end_date, channel_key="all", metric="total"):
+def cs_detail_rows(start_date, end_date, channel_key="all", metric="total", agent_filter=None):
     """Return the safe, auditable source rows behind a dashboard count."""
     rows = []
     with db_connection() as db:
@@ -179,7 +206,7 @@ def cs_detail_rows(start_date, end_date, channel_key="all", metric="total"):
             created_time,created_local_date,closed_time,raw_json FROM zoho_tickets
             WHERE created_local_date BETWEEN ? AND ?""", (start_date, end_date)).fetchall()
         bik = db.execute("""SELECT ticket_id,local_date,channel,ticket_stage,agent_name,created_time,
-            closed_time,closure_seconds,first_response_seconds,human_response_seconds,raw_json
+            closed_time,closure_seconds,first_response_seconds,human_response_seconds,agent_messages,raw_json
             FROM bik_tickets WHERE local_date BETWEEN ? AND ?""", (start_date, end_date)).fetchall()
     for row in zoho:
         source_channel = (row["channel"] or "").lower()
@@ -192,20 +219,22 @@ def cs_detail_rows(start_date, end_date, channel_key="all", metric="total"):
         escalated = status in {"escalated", "on hold", "onhold"}
         subcategory = str(raw.get("subCategory") or "").strip()
         spam = bool(raw.get("isSpam")) or subcategory.lower() in SPAM_SUBCATEGORIES or tagged_general(raw)
-        untagged = not subcategory or subcategory == "-"
-        replies = max(int(raw.get("threadCount") or 0) - 1, 0)
+        untagged = not spam and (not subcategory or subcategory == "-")
+        replies = int(raw.get("_agentReplyCount") or 0)
         flags = {"total": True, "resolved": resolved, "open": not resolved, "escalated": escalated,
                  "spam": spam, "genuine": not spam and not untagged, "untagged": untagged,
                  "working_hours": working_hours(row["created_time"]),
-                 "outside_hours": not working_hours(row["created_time"]), "reply_10_12": 10 <= replies <= 12}
-        if not flags.get(metric, False):
+                 "outside_hours": not working_hours(row["created_time"]), "agent_replies": replies > 0}
+        if not flags.get(metric, False) or (agent_filter and zoho_agent(raw) != agent_filter):
             continue
         rows.append({"source": "Zoho Desk", "channel": key.title(), "record_id": row["ticket_number"] or row["id"],
                      "date": row["created_local_date"], "created_time": row["created_time"],
                      "agent": zoho_agent(raw), "status": row["status"], "classification": "Spam" if spam else ("Untagged" if untagged else "Genuine"),
-                     "category": raw.get("category") or "", "disposition": subcategory,
-                     "message_type": "", "first_response_seconds": None, "average_response_seconds": None,
-                     "resolution_seconds": None, "reply_count_estimate": replies})
+                     "category": raw.get("category") or (raw.get("customFields") or {}).get("Type") or "",
+                     "disposition": subcategory or (raw.get("customFields") or {}).get("Disposition Category") or "",
+                     "message_type": "", "first_response_seconds": raw.get("_firstResponseSeconds"),
+                     "average_response_seconds": raw.get("_averageResponseSeconds"),
+                     "resolution_seconds": None, "agent_reply_count": replies})
     for row in bik:
         source_channel = (row["channel"] or "").lower()
         key = "chats" if source_channel in {"whatsapp", "chat", "chats", "livechat"} else (
@@ -227,7 +256,7 @@ def cs_detail_rows(start_date, end_date, channel_key="all", metric="total"):
                  "instagram_comment": key == "orm" and source_channel in {"instagram", "ig"} and comment,
                  "facebook_dm": key == "orm" and source_channel not in {"instagram", "ig"} and not comment,
                  "facebook_comment": key == "orm" and source_channel not in {"instagram", "ig"} and comment}
-        if not flags.get(metric, False):
+        if not flags.get(metric, False) or (agent_filter and name != agent_filter):
             continue
         rows.append({"source": "BIK", "channel": key.title(), "record_id": row["ticket_id"] or "",
                      "date": row["local_date"], "created_time": row["created_time"], "agent": name,
@@ -235,5 +264,5 @@ def cs_detail_rows(start_date, end_date, channel_key="all", metric="total"):
                      "category": row["channel"], "disposition": raw.get("Ticket label") or "",
                      "message_type": message_type, "first_response_seconds": row["first_response_seconds"],
                      "average_response_seconds": row["human_response_seconds"],
-                     "resolution_seconds": row["closure_seconds"], "reply_count_estimate": None})
+                     "resolution_seconds": row["closure_seconds"], "agent_reply_count": int(row["agent_messages"] or 0)})
     return sorted(rows, key=lambda item: (item["date"] or "", str(item["record_id"])), reverse=True)

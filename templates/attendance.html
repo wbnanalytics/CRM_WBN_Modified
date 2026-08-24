@@ -5,7 +5,7 @@
   <div><span class="eyebrow">WORKFORCE / ATTENDANCE</span><h1>Attendance Planner</h1><p>Monthly CRM attendance with the complete historical workbook carried forward.</p></div>
   <div class="heading-actions">
     <span class="status large"><i></i>Updated {{ report.last_updated|ist_datetime }}</span>
-    <form class="attendance-month-filter" method="get"><label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label><button class="filter-button" type="submit">Apply</button></form>
+    <form class="attendance-month-filter" method="get"><label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label><button class="filter-button" type="submit">Apply</button><a class="reset-filter" href="{{ url_for('attendance') }}">Reset</a></form>
   </div>
 </section>
 
@@ -34,9 +34,8 @@
         {% for item in employee.days %}<td class="attendance-day {{ 'today-column' if item.date == today.isoformat() }} {{ 'future-day' if item.date > today.isoformat() }}" data-attendance-cell>
           {% if is_admin and item.date <= today.isoformat() %}
           <select class="attendance-status-select status-{{ (item.code or 'blank')|lower|replace(' ', '-') }}" data-employee-key="{{ employee.employee_key }}" data-attendance-date="{{ item.date }}" data-original="{{ item.code }}" aria-label="{{ employee.employee_name }} attendance on {{ item.date }}">
-            {% if item.code not in ('P','A','') %}<option value="{{ item.code }}" selected>{{ item.code }}</option>{% endif %}
-            {% if not item.code %}<option value="" selected>—</option>{% endif %}
-            <option value="P" {{ 'selected' if item.code == 'P' }}>P</option><option value="A" {{ 'selected' if item.code == 'A' }}>A</option>
+            <option value="" {{ 'selected' if not item.code }}>—</option>
+            {% for code, label in report.status_labels.items() %}<option value="{{ code }}" {{ 'selected' if item.code == code }}>{{ code }} — {{ label }}</option>{% endfor %}
           </select>
           {% else %}<span class="attendance-code status-{{ (item.code or 'blank')|lower|replace(' ', '-') }}" title="{{ item.label }}">{{ item.code or '—' }}</span>{% endif %}
         </td>{% endfor %}

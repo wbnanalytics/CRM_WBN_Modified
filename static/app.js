@@ -84,6 +84,7 @@ if (productFilter) {
   const query = productFilter.querySelector("[data-product-query]");
   const rows = [...document.querySelectorAll("[data-product-row]")];
   const count = document.querySelector("[data-product-count]");
+  const exportLink = document.querySelector("[data-product-export]");
   const applyProductFilter = () => {
     const needle = query.value.trim().toLowerCase();
     let visible = 0;
@@ -94,6 +95,17 @@ if (productFilter) {
       visible += Number(matches);
     });
     if (count) count.textContent = `${visible} of ${rows.length} combinations`;
+    if (exportLink) {
+      const url = new URL(exportLink.href, window.location.origin);
+      if (needle) {
+        url.searchParams.set("product_field", field.value);
+        url.searchParams.set("product_query", query.value.trim());
+      } else {
+        url.searchParams.delete("product_field");
+        url.searchParams.delete("product_query");
+      }
+      exportLink.href = url.toString();
+    }
   };
   query.addEventListener("input", applyProductFilter);
   field.addEventListener("change", applyProductFilter);

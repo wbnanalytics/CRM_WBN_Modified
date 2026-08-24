@@ -30,6 +30,17 @@ PRESENT_CODES = {"P", "WFH", "Offsite"}
 PLANNED_CODES = {"PL", "MAT", "PAT", "CO", "FL", "HD-PL"}
 UNPLANNED_CODES = {"A", "UPL", "SL", "BL", "UL"}
 NON_WORKING_CODES = {"WO", "PH", "RH", "NA"}
+PL_DEDUCTION_CODES = {"PL", "UPL", "MAT", "PAT", "CO", "FL", "PH", "BL"}
+
+
+def leave_deduction(code):
+    if code == "SL":
+        return (0.0, 1.0)
+    if code == "HD-PL":
+        return (0.5, 0.0)
+    if code in PL_DEDUCTION_CODES:
+        return (1.0, 0.0)
+    return (0.0, 0.0)
 
 
 def employee_key(name):
@@ -87,16 +98,28 @@ def latest_attendance_import():
 
 
 def set_attendance(employee, attendance_date, status_code, updated_by):
-    if status_code not in {"P", "A"}:
-        raise ValueError("Attendance can only be marked Present or Absent")
+    if status_code not in STATUS_LABELS and status_code != "":
+        raise ValueError("Unknown attendance status")
     date.fromisoformat(attendance_date)
     now = utc_now()
     with db_connection() as db:
-        exists = db.execute(
-            "SELECT 1 FROM attendance_employees WHERE employee_key=?", (employee,),
+        person = db.execute(
+            "SELECT pl_balance,sl_balance FROM attendance_employees WHERE employee_key=?", (employee,),
         ).fetchone()
-        if not exists:
+        if not person:
             raise ValueError("Employee not found")
+        previous = db.execute(
+            "SELECT status_code FROM attendance_records WHERE employee_key=? AND attendance_date=?",
+            (employee, attendance_date),
+        ).fetchone()
+        old_pl, old_sl = leave_deduction(previous["status_code"] if previous else "")
+        new_pl, new_sl = leave_deduction(status_code)
+        pl_balance = float(person["pl_balance"] or 0) + old_pl - new_pl
+        sl_balance = float(person["sl_balance"] or 0) + old_sl - new_sl
+        if pl_balance < 0 or sl_balance < 0:
+            raise ValueError("Insufficient PL or SL balance for this attendance selection")
+        db.execute("UPDATE attendance_employees SET pl_balance=?,sl_balance=?,updated_at=? WHERE employee_key=?",
+                   (pl_balance, sl_balance, now, employee))
         db.execute(
             """INSERT INTO attendance_records
                (employee_key, attendance_date, status_code, source, updated_by, updated_at)
@@ -106,7 +129,8 @@ def set_attendance(employee, attendance_date, status_code, updated_by):
                  updated_by=excluded.updated_by, updated_at=excluded.updated_at""",
             (employee, attendance_date, status_code, updated_by, now),
         )
-    return {"employee_key": employee, "attendance_date": attendance_date, "status_code": status_code, "updated_at": now}
+    return {"employee_key": employee, "attendance_date": attendance_date, "status_code": status_code,
+            "pl_balance": pl_balance, "sl_balance": sl_balance, "updated_at": now}
 
 
 def set_leave_balance(employee, pl_balance, sl_balance, updated_by):

@@ -140,22 +140,26 @@ def selected_reporting_period(default="daily"):
         if period == "daily":
             anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
         elif period == "weekly":
-            iso_value = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}")
-            iso_year, iso_week = iso_value.split("-W")
-            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
+            # Weekly reporting is a month of Saturday-Friday business weeks,
+            # labelled by their Friday week-ending date.
+            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         elif period == "monthly":
             anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         else:
             anchor = date(int(request.args.get("year", today.year)), 1, 1)
     except (TypeError, ValueError):
         anchor = today if period == "daily" else (
-            today - timedelta(days=today.weekday()) if period == "weekly" else
+            date(today.year, today.month, 1) if period == "weekly" else
             date(today.year, today.month, 1) if period == "monthly" else date(today.year, 1, 1)
         )
     if period == "daily":
         start = end = anchor
     elif period == "weekly":
-        start, end = anchor - timedelta(days=anchor.weekday()), anchor - timedelta(days=anchor.weekday()) + timedelta(days=6)
+        month_start = date(anchor.year, anchor.month, 1)
+        month_end = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1) - timedelta(days=1)
+        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
+        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+        start, end = first_friday - timedelta(days=6), last_friday
     elif period == "monthly":
         start = date(anchor.year, anchor.month, 1)
         next_month = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1)
@@ -181,6 +185,22 @@ def msal_app():
 @app.before_request
 def require_production_login():
     public = {"index", "microsoft_login", "microsoft_callback", "health", "favicon", "static"}
+    if session.get("user"):
+        now_ist = datetime.now(IST)
+        cutoff = now_ist.replace(hour=4, minute=0, second=0, microsecond=0)
+        if now_ist < cutoff:
+            cutoff -= timedelta(days=1)
+        try:
+            signed_in_at = datetime.fromisoformat(session.get("signed_in_at", ""))
+            if signed_in_at.tzinfo is None:
+                signed_in_at = signed_in_at.replace(tzinfo=IST)
+        except (TypeError, ValueError):
+            signed_in_at = datetime.min.replace(tzinfo=IST)
+        if signed_in_at < cutoff:
+            session.clear()
+            if request.endpoint not in public:
+                flash("Your daily session ended at 4:00 AM IST. Please sign in again.", "success")
+                return redirect(url_for("index"))
     if os.getenv("APP_ENV") == "production" and request.endpoint not in public and not session.get("user"):
         return redirect(url_for("index"))
     if session.get("user") and request.endpoint not in public:
@@ -343,6 +363,23 @@ def ist_datetime(value):
     return parsed.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
 
 
+@app.template_filter("duration")
+def readable_duration(value):
+    if value is None:
+        return "N/A"
+    seconds = max(0, int(round(float(value))))
+    if seconds < 60:
+        return f"{seconds}s"
+    minutes, seconds = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {seconds}s"
+    hours, minutes = divmod(minutes, 60)
+    if hours < 24:
+        return f"{hours}h {minutes}m"
+    days, hours = divmod(hours, 24)
+    return f"{days}d {hours}h"
+
+
 @app.route("/")
 def index():
     if session.get("preview_user") or session.get("user"):
@@ -383,6 +420,7 @@ def microsoft_login():
 def preview_login():
     session.clear()
     session["user"] = {"name": "Varun", "email": PRIMARY_ADMIN_EMAIL, "role": "admin", "permissions": []}
+    session["signed_in_at"] = datetime.now(IST).isoformat()
     return redirect(url_for("dashboard"))
 
 
@@ -404,7 +442,8 @@ def dashboard():
     managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
     top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
-    cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat())
+    selected_agent = request.args.get("agent", "").strip() if view == "cs" else ""
+    cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), selected_agent)
     attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
         "dashboard_v2.html", active_page="dashboard", page_title={"cs": "CS Dashboard", "sales": "Sales Dashboard", "attendance": "Attendance Dashboard"}[view],
@@ -420,7 +459,7 @@ def dashboard():
 @permission_required("dashboard")
 def download_cs_dashboard():
     selection = selected_reporting_period("daily")
-    report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat())
+    report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), request.args.get("agent", "").strip())
     return send_file(
         cs_dashboard_excel(report), as_attachment=True,
         download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
@@ -436,13 +475,14 @@ def cs_dashboard_details():
     metric = request.args.get("metric", "total")
     allowed_channels = {"all", "email", "inbound", "chats", "orm"}
     allowed_metrics = {"total", "resolved", "open", "escalated", "spam", "genuine", "untagged",
-                       "working_hours", "outside_hours", "reply_10_12", "bot_handled", "bot_resolved",
+                       "working_hours", "outside_hours", "agent_replies", "bot_handled", "bot_resolved",
                        "human_handover", "instagram_dm", "instagram_comment", "facebook_dm", "facebook_comment"}
     if channel not in allowed_channels or metric not in allowed_metrics:
         abort(400)
-    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric)
+    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric, request.args.get("agent", "").strip())
     return render_template("cs_details.html", active_page="dashboard", page_title="CS underlying data",
-                           selection=selection, channel=channel, metric=metric, rows=rows)
+                           selection=selection, channel=channel, metric=metric, rows=rows,
+                           selected_agent=request.args.get("agent", "").strip())
 
 
 @app.route("/dashboard/cs/details.xlsx")
@@ -451,7 +491,7 @@ def download_cs_details():
     selection = selected_reporting_period("daily")
     channel = request.args.get("channel", "all")
     metric = request.args.get("metric", "total")
-    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric)
+    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric, request.args.get("agent", "").strip())
     return send_file(cs_detail_excel(rows, f"{channel.title()} — {metric.replace('_', ' ').title()}"),
                      as_attachment=True,
                      download_name=f"cs-underlying-{channel}-{metric}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
@@ -569,9 +609,9 @@ def download_shopify_performance():
     selection = selected_reporting_period("daily")
     period, anchor = selection["period"], selection["anchor"]
     report = shopify_sales_report(period, anchor)
-    label = str(anchor.year) if period == "yearly" else (anchor.strftime("%G-W%V") if period == "weekly" else anchor.isoformat() if period == "daily" else anchor.strftime("%Y-%m"))
+    label = str(anchor.year) if period == "yearly" else (anchor.isoformat() if period == "daily" else anchor.strftime("%Y-%m"))
     return send_file(
-        performance_excel(report), as_attachment=True,
+        performance_excel(report, request.args.get("product_field", "all"), request.args.get("product_query", "")), as_attachment=True,
         download_name=f"shopify-sales-performance-{period}-{label}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -704,7 +744,17 @@ def scorecard():
 
 
 def scorecard_access_required(permission):
-    return permission_required(f"scorecard.{permission}")
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not can_access(f"scorecard.{permission}"):
+                abort(403)
+            # Users may view/filter/download; every mutation is admin-only.
+            if request.method not in {"GET", "HEAD", "OPTIONS"} and session.get("user", {}).get("role") != "admin":
+                abort(403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
 
 
 @app.route("/api/scorecard/agents", methods=["GET", "POST"])
@@ -976,6 +1026,7 @@ def microsoft_callback():
     session.clear()
     permissions = get_portal_permissions(email)
     session["user"] = {"name": claims.get("name") or access.get("display_name") or email, "email": email, "role": access["role"], "permissions": permissions}
+    session["signed_in_at"] = datetime.now(IST).isoformat()
     if access["role"] == "admin" or "dashboard" in permissions:
         return redirect(url_for("dashboard"))
     if any(key.startswith("zoho.") for key in permissions):

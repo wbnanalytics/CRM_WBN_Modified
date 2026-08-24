@@ -73,6 +73,52 @@ def _local_date(iso_timestamp):
     return parsed.astimezone(IST).date().isoformat()
 
 
+def _zoho_get(endpoint, headers, params=None):
+    """Read Zoho with bounded retries so a live refresh is all-or-nothing."""
+    for attempt in range(4):
+        response = requests.get(endpoint, headers=headers, params=params, timeout=45)
+        if response.status_code not in {429, 500, 502, 503, 504}:
+            response.raise_for_status()
+            return response.json()
+        if attempt == 3:
+            response.raise_for_status()
+        time_module.sleep(1.5 * (attempt + 1))
+
+
+def _thread_metrics(threads):
+    def moment(item):
+        value = item.get("createdTime") or item.get("sentTime")
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")) if value else None
+
+    ordered = sorted((item for item in threads if moment(item)), key=moment)
+    incoming = [item for item in ordered if str(item.get("direction", "")).lower() == "in"]
+    outgoing = [item for item in ordered if str(item.get("direction", "")).lower() == "out"]
+    response_seconds = []
+    for item in incoming:
+        started = moment(item)
+        reply = next((candidate for candidate in outgoing if moment(candidate) > started), None)
+        if reply:
+            response_seconds.append(max(0, int((moment(reply) - started).total_seconds())))
+    agents = {}
+    for item in outgoing:
+        author = item.get("author") or {}
+        name = author.get("name") or " ".join(filter(None, (author.get("firstName"), author.get("lastName")))) or author.get("email") or "Unassigned"
+        agents[name] = agents.get(name, 0) + 1
+    return {"_agentReplyCount": len(outgoing), "_replyAgentCounts": agents,
+            "_firstResponseSeconds": response_seconds[0] if response_seconds else None,
+            "_averageResponseSeconds": round(sum(response_seconds) / len(response_seconds)) if response_seconds else None,
+            "_responsePairCount": len(response_seconds)}
+
+
+def _enrich_zoho_ticket(ticket, endpoint, headers):
+    ticket_id = str(ticket["id"])
+    merged = {**ticket, **_zoho_get(f"{endpoint}/{ticket_id}", headers)}
+    if str(merged.get("channel") or "").lower() == "email":
+        threads = _zoho_get(f"{endpoint}/{ticket_id}/threads", headers, {"from": 0, "limit": 200}).get("data", [])
+        merged.update(_thread_metrics(threads))
+    return merged
+
+
 def sync_zoho(start_date, end_date):
     start_date = _parse_date(start_date)
     end_date = _parse_date(end_date)
@@ -120,6 +166,9 @@ def sync_zoho(start_date, end_date):
             if len(rows) < page_size:
                 break
             offset += page_size
+        # List responses omit dispositions and thread timing; persist the
+        # authoritative ticket detail used by the dashboard.
+        selected = [_enrich_zoho_ticket(ticket, endpoint, headers) for ticket in selected]
         saved = upsert_zoho_tickets(selected)
         finish_sync_run(run_id, "success", received, saved)
         return {"run_id": run_id, "rows_received": received, "rows_saved": saved}

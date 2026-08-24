@@ -49,7 +49,7 @@ def target_template(employees, month_start, current_targets):
     return output
 
 
-def performance_excel(report):
+def performance_excel(report, product_field="all", product_query=""):
     book = Workbook()
     sheet = book.active
     sheet.title = "Sales Performance"
@@ -103,7 +103,15 @@ def performance_excel(report):
     for cell in product_sheet[1]:
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
-    for item in report.get("product_rows", []):
+    query = (product_query or "").strip().lower()
+    fields = {"employee": "display_name", "role": "role", "product": "product_title", "sku": "product_sku"}
+    product_rows = report.get("product_rows", [])
+    if query:
+        if product_field in fields:
+            product_rows = [item for item in product_rows if query in str(item.get(fields[product_field]) or "").lower()]
+        else:
+            product_rows = [item for item in product_rows if query in " ".join(str(item.get(key) or "").lower() for key in fields.values())]
+    for item in product_rows:
         product_sheet.append([item["display_name"], item["role"], item["product_title"], item["product_sku"], item["total"], item["orders"], item["average_order_value"]])
     product_sheet.freeze_panes = "A2"
     product_sheet.auto_filter.ref = product_sheet.dimensions
