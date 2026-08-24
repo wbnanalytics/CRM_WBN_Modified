@@ -24,9 +24,9 @@ from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, target_template
-from attendance_service import attendance_month, set_attendance
+from attendance_service import attendance_month, attendance_period, set_attendance
 from cs_dashboard_service import cs_dashboard
-from dashboard_export import cs_dashboard_excel
+from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel
 
 
 load_dotenv()
@@ -397,7 +397,7 @@ def logout():
 def dashboard():
     seed_default_employees()
     view = request.args.get("view", "cs")
-    if view not in {"cs", "sales"}:
+    if view not in {"cs", "sales", "attendance"}:
         view = "cs"
     selection = selected_reporting_period("daily" if view == "cs" else "monthly")
     report = shopify_sales_report(selection["period"], selection["anchor"])
@@ -405,9 +405,10 @@ def dashboard():
     top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
     cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat())
+    attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
-        "dashboard_v2.html", active_page="dashboard", page_title="CS Dashboard" if view == "cs" else "Sales Dashboard",
-        view=view, selection=selection, cs_report=cs_report,
+        "dashboard_v2.html", active_page="dashboard", page_title={"cs": "CS Dashboard", "sales": "Sales Dashboard", "attendance": "Attendance Dashboard"}[view],
+        view=view, selection=selection, cs_report=cs_report, attendance_report=attendance_report,
         report=report, top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"],
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
@@ -423,6 +424,18 @@ def download_cs_dashboard():
     return send_file(
         cs_dashboard_excel(report), as_attachment=True,
         download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/dashboard/attendance.xlsx")
+@permission_required("dashboard")
+def download_attendance_dashboard():
+    selection = selected_reporting_period("monthly")
+    report = attendance_period(selection["start"], selection["end"], selection["today"])
+    return send_file(
+        attendance_dashboard_excel(report), as_attachment=True,
+        download_name=f"attendance-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

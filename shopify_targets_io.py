@@ -98,6 +98,19 @@ def performance_excel(report):
         cell.value = (cell.value or 0) / 100
     for index, column in enumerate(sheet.columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 28)
+    product_sheet = book.create_sheet("Product by Employee")
+    product_sheet.append(["Employee", "Role", "Product", "SKU", "Sales", "Orders", "Average Order Value"])
+    for cell in product_sheet[1]:
+        cell.fill = PatternFill("solid", fgColor=LIME)
+        cell.font = Font(bold=True)
+    for item in report.get("product_rows", []):
+        product_sheet.append([item["display_name"], item["role"], item["product_title"], item["product_sku"], item["total"], item["orders"], item["average_order_value"]])
+    product_sheet.freeze_panes = "A2"
+    product_sheet.auto_filter.ref = product_sheet.dimensions
+    for row in product_sheet.iter_rows(min_row=2, min_col=5, max_col=7):
+        row[0].number_format = row[2].number_format = '₹#,##0.00'
+    for index, column in enumerate(product_sheet.columns, start=1):
+        product_sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 34)
     output = BytesIO()
     book.save(output)
     output.seek(0)

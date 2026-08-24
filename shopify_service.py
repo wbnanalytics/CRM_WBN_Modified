@@ -9,7 +9,7 @@ import requests
 
 from database import (
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
-    replace_shopify_sales, seed_shopify_employees, shopify_sales_between,
+    replace_shopify_product_sales, replace_shopify_sales, seed_shopify_employees, shopify_product_sales_between, shopify_sales_between,
     shopify_sales_summary, shopify_targets_between, start_sync_run,
 )
 
@@ -206,6 +206,34 @@ ORDER BY day ASC, staff_member_name ASC"""
                     f"Shopify returned an empty snapshot for {chunk_start} to {chunk_end}; existing data was preserved"
                 )
             saved += replace_shopify_sales(chunk_start.isoformat(), chunk_end.isoformat(), rows)
+            product_query = f"""FROM sales
+SHOW total_sales, orders
+TIMESERIES day
+GROUP BY staff_member_name, product_title, product_variant_sku
+SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
+ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku ASC"""
+            product_source_rows = _shopifyql_all(token, product_query)
+            received += len(product_source_rows)
+            product_combined = defaultdict(lambda: {"total_sales": 0.0, "order_count": 0, "source_names": set()})
+            for row in product_source_rows:
+                source_name = row.get("staff_member_name")
+                day = str(row.get("day") or "")[:10]
+                title = str(row.get("product_title") or "Unspecified product").strip()
+                sku = str(row.get("product_variant_sku") or "").strip()
+                employee_key, _display_name = _employee_identity(source_name)
+                if not source_name or not employee_key or not day:
+                    continue
+                item = product_combined[(day, employee_key, title, sku)]
+                item["total_sales"] += float(row.get("total_sales") or 0)
+                item["order_count"] += int(float(row.get("orders") or 0))
+                item["source_names"].add(str(source_name))
+            product_rows = [{
+                "day": day, "employee_key": employee_key,
+                "source_employee_name": " / ".join(sorted(item["source_names"])),
+                "product_title": title, "product_sku": sku,
+                "total_sales": item["total_sales"], "order_count": item["order_count"],
+            } for (day, employee_key, title, sku), item in product_combined.items()]
+            replace_shopify_product_sales(chunk_start.isoformat(), chunk_end.isoformat(), product_rows)
         finish_sync_run(run_id, "success", received, saved)
         return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
     except Exception as exc:
@@ -272,6 +300,7 @@ def sales_report(period="daily", anchor=None):
     anchor = anchor or datetime.now(IST).date()
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
+    product_sales = shopify_product_sales_between(start.isoformat(), end.isoformat())
     target_period = "weekly" if period == "dashboard" else ("monthly" if period == "yearly" else period)
     target_start = date(anchor.year, anchor.month, 1)
     target_end = end if period == "yearly" else target_start
@@ -344,9 +373,22 @@ def sales_report(period="daily", anchor=None):
     team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
     team_targets = [sum(row["targets"][i] for row in team_rows) for i in range(len(columns))]
     team_target = sum(row["total_target"] for row in team_rows)
+    product_summary = defaultdict(lambda: {"sales": 0.0, "orders": 0})
+    for item in product_sales:
+        slot = product_summary[(item["employee_key"], item["display_name"], item["role"], item["product_title"], item["product_sku"])]
+        slot["sales"] += float(item["total_sales"])
+        slot["orders"] += int(item["order_count"])
+    product_rows = [{
+        "employee_key": key[0], "display_name": key[1], "role": key[2],
+        "product_title": key[3], "product_sku": key[4], "total": values["sales"],
+        "orders": values["orders"],
+        "average_order_value": values["sales"] / values["orders"] if values["orders"] else 0,
+    } for key, values in product_summary.items()]
+    product_rows.sort(key=lambda item: (item["display_name"], -item["total"], item["product_title"]))
     return {
         "period": period, "anchor": anchor, "start": start, "end": end,
         "columns": columns, "rows": rows,
+        "product_rows": product_rows,
         "team": {
             "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),

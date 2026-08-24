@@ -174,3 +174,49 @@ def attendance_month(anchor, today=None):
         "totals": totals, "latest_import": latest_import, "last_updated": latest_update,
         "status_labels": STATUS_LABELS,
     }
+
+
+def attendance_period(start, end, today=None):
+    today = today or date.today()
+    effective_end = min(end, today)
+    dates = [] if start > effective_end else [start + timedelta(days=index) for index in range((effective_end - start).days + 1)]
+    latest_import = latest_attendance_import()
+    default_from = date.fromisoformat(latest_import["range_end"]) if latest_import else today
+    with db_connection() as db:
+        employee_rows = db.execute(
+            """SELECT employee_key, employee_name, role, employment_status
+               FROM attendance_employees ORDER BY sort_order, employee_name"""
+        ).fetchall()
+        record_rows = db.execute(
+            """SELECT employee_key, attendance_date, status_code
+               FROM attendance_records WHERE attendance_date BETWEEN ? AND ?""",
+            (start.isoformat(), end.isoformat()),
+        ).fetchall()
+        updated = db.execute("SELECT MAX(updated_at) AS updated_at FROM attendance_records").fetchone()["updated_at"]
+    records = {(row["employee_key"], row["attendance_date"]): row["status_code"] for row in record_rows}
+    rows = []
+    totals = {"present": 0, "planned": 0, "unplanned": 0, "off": 0}
+    for employee_row in employee_rows:
+        employee = dict(employee_row)
+        if employee["employment_status"] != "Active":
+            continue
+        counts = {"present": 0, "planned": 0, "unplanned": 0, "off": 0}
+        for day in dates:
+            code = records.get((employee["employee_key"], day.isoformat()))
+            if not code and default_from <= day <= today:
+                code = "P"
+            if code in PRESENT_CODES:
+                counts["present"] += 1
+            elif code in PLANNED_CODES:
+                counts["planned"] += 1
+            elif code in UNPLANNED_CODES:
+                counts["unplanned"] += 1
+            elif code in NON_WORKING_CODES:
+                counts["off"] += 1
+        base = counts["present"] + counts["planned"] + counts["unplanned"]
+        rows.append({**employee, **counts, "attendance_rate": round(counts["present"] / base * 100, 1) if base else 0})
+        for key in totals:
+            totals[key] += counts[key]
+    base = totals["present"] + totals["planned"] + totals["unplanned"]
+    totals["attendance_rate"] = round(totals["present"] / base * 100, 1) if base else 0
+    return {"start": start, "end": end, "rows": rows, "totals": totals, "last_updated": updated, "employee_count": len(rows)}

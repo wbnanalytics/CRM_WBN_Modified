@@ -75,4 +75,9 @@
   </div>
 </section>
 
+<section class="panel sales-report-panel product-sales-panel">
+  <div class="panel-head"><div><span class="eyebrow">PRODUCT × EMPLOYEE</span><h2>Product-level sales per person</h2></div><span class="count-badge">{{ report.product_rows|length }} combinations</span></div>
+  <div class="table-wrap"><table><thead><tr><th>Employee</th><th>Role</th><th>Product</th><th>SKU</th><th>Sales</th><th>Orders</th><th>Average order value</th></tr></thead><tbody>{% for item in report.product_rows %}<tr><td><strong>{{ item.display_name }}</strong></td><td>{{ item.role }}</td><td>{{ item.product_title }}</td><td>{{ item.product_sku or '—' }}</td><td><strong>{{ item.total|inr }}</strong></td><td>{{ item.orders }}</td><td>{{ item.average_order_value|inr }}</td></tr>{% else %}<tr><td colspan="7" class="empty-state">Product-level data will appear after the next Shopify refresh.</td></tr>{% endfor %}</tbody></table></div>
+</section>
+
 {% endblock %}

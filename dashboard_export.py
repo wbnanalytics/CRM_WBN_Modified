@@ -41,3 +41,22 @@ def cs_dashboard_excel(report):
             letter = column[0].column_letter
             sheet.column_dimensions[letter].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 42)
     return _finish(workbook)
+
+
+def attendance_dashboard_excel(report):
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Attendance"
+    sheet.append(["Employee", "Role", "Present", "Planned Leave", "Absent / Unplanned", "Week Off / Holidays", "Attendance %"])
+    for item in report["rows"]:
+        sheet.append([item["employee_name"], item["role"], item["present"], item["planned"], item["unplanned"], item["off"], item["attendance_rate"] / 100])
+    for cell in sheet[1]:
+        cell.fill = PatternFill("solid", fgColor=FOREST)
+        cell.font = Font(color="FFFFFF", bold=True)
+    for cell in sheet["G"][1:]:
+        cell.number_format = "0.0%"
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = sheet.dimensions
+    for column in sheet.columns:
+        sheet.column_dimensions[column[0].column_letter].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 36)
+    return _finish(workbook)

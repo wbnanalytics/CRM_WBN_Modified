@@ -156,6 +156,18 @@ def init_db():
                 PRIMARY KEY (day, employee_key)
             );
 
+            CREATE TABLE IF NOT EXISTS shopify_product_sales_daily (
+                day TEXT NOT NULL,
+                employee_key TEXT NOT NULL,
+                source_employee_name TEXT NOT NULL,
+                product_title TEXT NOT NULL,
+                product_sku TEXT NOT NULL DEFAULT '',
+                total_sales REAL NOT NULL DEFAULT 0,
+                order_count INTEGER NOT NULL DEFAULT 0,
+                synced_at TEXT NOT NULL,
+                PRIMARY KEY (day, employee_key, product_title, product_sku)
+            );
+
             CREATE TABLE IF NOT EXISTS shopify_employee_config (
                 employee_key TEXT PRIMARY KEY,
                 source_name TEXT NOT NULL,
@@ -390,6 +402,8 @@ def init_db():
                 ON bik_conversations(local_date, channel);
             CREATE INDEX IF NOT EXISTS idx_shopify_sales_day
                 ON shopify_sales_daily(day);
+            CREATE INDEX IF NOT EXISTS idx_shopify_product_sales_day
+                ON shopify_product_sales_daily(day, employee_key);
             CREATE INDEX IF NOT EXISTS idx_shopify_targets_period
                 ON shopify_sales_targets(period_type, period_start);
             CREATE INDEX IF NOT EXISTS idx_attendance_records_date
@@ -705,6 +719,41 @@ def replace_shopify_sales(start_date, end_date, rows):
             ],
         )
     return len(rows)
+
+
+def replace_shopify_product_sales(start_date, end_date, rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute("DELETE FROM shopify_product_sales_daily WHERE day BETWEEN ? AND ?", (start_date, end_date))
+        db.executemany(
+            """INSERT INTO shopify_product_sales_daily
+               (day, employee_key, source_employee_name, product_title, product_sku,
+                total_sales, order_count, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(day, employee_key, product_title, product_sku) DO UPDATE SET
+                 source_employee_name=excluded.source_employee_name,
+                 total_sales=excluded.total_sales,
+                 order_count=excluded.order_count,
+                 synced_at=excluded.synced_at""",
+            [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), int(row["order_count"]), now) for row in rows],
+        )
+    return len(rows)
+
+
+def shopify_product_sales_between(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT p.day, p.employee_key,
+                      COALESCE(c.display_name, p.source_employee_name) AS display_name,
+                      COALESCE(c.role, 'Unassigned') AS role,
+                      p.product_title, p.product_sku, p.total_sales, p.order_count
+               FROM shopify_product_sales_daily p
+               LEFT JOIN shopify_employee_config c ON c.employee_key=p.employee_key
+               WHERE p.day BETWEEN ? AND ?
+               ORDER BY display_name, p.total_sales DESC, p.product_title""",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def shopify_sales_between(start_date, end_date):
