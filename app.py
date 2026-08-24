@@ -2,6 +2,7 @@ import os
 import secrets
 import subprocess
 import sys
+from calendar import monthrange
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -140,22 +141,24 @@ def selected_reporting_period(default="daily"):
         if period == "daily":
             anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
         elif period == "weekly":
-            default_week_end = today + timedelta(days=(4 - today.weekday()) % 7)
-            anchor = date.fromisoformat(request.args.get("week_end", default_week_end.isoformat()))
-            anchor += timedelta(days=(4 - anchor.weekday()) % 7)
+            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         elif period == "monthly":
             anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         else:
             anchor = date(int(request.args.get("year", today.year)), 1, 1)
     except (TypeError, ValueError):
         anchor = today if period == "daily" else (
-            today + timedelta(days=(4 - today.weekday()) % 7) if period == "weekly" else
+            date(today.year, today.month, 1) if period == "weekly" else
             date(today.year, today.month, 1) if period == "monthly" else date(today.year, 1, 1)
         )
     if period == "daily":
         start = end = anchor
     elif period == "weekly":
-        start, end = anchor - timedelta(days=6), anchor
+        month_start = date(anchor.year, anchor.month, 1)
+        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
+        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+        start, end = first_friday - timedelta(days=6), last_friday
     elif period == "monthly":
         start = date(anchor.year, anchor.month, 1)
         next_month = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1)
@@ -544,6 +547,11 @@ def shopify():
     period, anchor, today = selection["period"], selection["anchor"], selection["today"]
     selected_agent = request.args.get("agent", "").strip()
     report = shopify_sales_report(period, anchor, selected_agent)
+    week_end_report = None
+    if period == "monthly":
+        week_end_report = shopify_sales_report("weekly", anchor, selected_agent)
+    elif period == "yearly":
+        week_end_report = shopify_sales_report("weekly_year", anchor, selected_agent)
     iso = anchor.isocalendar()
     return render_template(
         "shopify.html", active_page="shopify", page_title="Shopify Sales",
@@ -551,6 +559,7 @@ def shopify():
         selected_date=anchor.isoformat(), selected_week=f"{iso.year}-W{iso.week:02}", selected_week_end=report["end"].isoformat(),
         selected_month=anchor.strftime("%Y-%m"), selected_year=anchor.year,
         selected_agent=report["selected_employee"]["employee_key"] if report["selected_employee"] else "",
+        week_end_report=week_end_report,
         available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
     )
 
@@ -613,6 +622,21 @@ def download_shopify_performance():
     return send_file(
         performance_excel(report, request.args.get("product_field", "all"), request.args.get("product_query", "")), as_attachment=True,
         download_name=f"shopify-sales-performance-{period}-{label}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/shopify/week-end.xlsx")
+@permission_required("shopify.view")
+def download_shopify_week_end():
+    selection = selected_reporting_period("monthly")
+    source_period, anchor = selection["period"], selection["anchor"]
+    report_period = "weekly_year" if source_period == "yearly" else "weekly"
+    report = shopify_sales_report(report_period, anchor, request.args.get("agent", "").strip())
+    label = str(anchor.year) if source_period == "yearly" else anchor.strftime("%Y-%m")
+    return send_file(
+        performance_excel(report), as_attachment=True,
+        download_name=f"shopify-week-end-report-{label}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 

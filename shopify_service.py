@@ -247,12 +247,33 @@ def _period_columns(period, anchor):
         columns = [{"key": anchor.isoformat(), "label": anchor.strftime("%d %b %Y"), "start": anchor, "end": anchor}]
         default_target_divisor = 5.5
     elif period == "weekly":
-        end = anchor + timedelta(days=(4 - anchor.weekday()) % 7)
-        start = end - timedelta(days=6)
-        columns = [{
-            "key": end.isoformat(), "label": f"WE {end.strftime('%d %b').upper()}",
-            "start": start, "end": end,
-        }]
+        month_start = date(anchor.year, anchor.month, 1)
+        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
+        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+        columns = []
+        week_end = first_friday
+        while week_end <= last_friday:
+            columns.append({
+                "key": week_end.isoformat(), "label": f"WE {week_end.strftime('%d %b').upper()}",
+                "start": week_end - timedelta(days=6), "end": week_end,
+            })
+            week_end += timedelta(days=7)
+        start, end = columns[0]["start"], columns[-1]["end"]
+        default_target_divisor = 1
+    elif period == "weekly_year":
+        year_start, year_end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
+        first_friday = year_start + timedelta(days=(4 - year_start.weekday()) % 7)
+        last_friday = year_end - timedelta(days=(year_end.weekday() - 4) % 7)
+        columns = []
+        week_end = first_friday
+        while week_end <= last_friday:
+            columns.append({
+                "key": week_end.isoformat(), "label": f"WE {week_end.strftime('%d %b').upper()}",
+                "start": week_end - timedelta(days=6), "end": week_end,
+            })
+            week_end += timedelta(days=7)
+        start, end = columns[0]["start"], columns[-1]["end"]
         default_target_divisor = 1
     elif period == "dashboard":
         month_start = date(anchor.year, anchor.month, 1)
@@ -301,9 +322,9 @@ def sales_report(period="daily", anchor=None, employee_key=""):
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
     product_sales = shopify_product_sales_between(start.isoformat(), end.isoformat())
-    target_period = "weekly" if period == "dashboard" else ("monthly" if period == "yearly" else period)
-    target_start = date(anchor.year, anchor.month, 1)
-    target_end = end if period == "yearly" else target_start
+    target_period = "weekly" if period in {"dashboard", "weekly", "weekly_year"} else ("monthly" if period == "yearly" else period)
+    target_start = date(anchor.year, 1 if period in {"yearly", "weekly_year"} else anchor.month, 1)
+    target_end = end if period in {"yearly", "weekly_year"} else target_start
     override_rows = shopify_targets_between(target_period, target_start.isoformat(), target_end.isoformat())
     overrides = {
         (item["employee_key"], item["period_start"]): float(item["target_amount"])
@@ -347,9 +368,11 @@ def sales_report(period="daily", anchor=None, employee_key=""):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        if period == "weekly":
-            selected_target = overrides.get((employee["employee_key"], target_start.isoformat()), period_target)
-            targets = [selected_target for _ in columns]
+        if period in {"weekly", "weekly_year"}:
+            targets = [overrides.get(
+                (employee["employee_key"], date(column["end"].year, column["end"].month, 1).isoformat()),
+                period_target,
+            ) for column in columns]
         elif period == "monthly":
             selected_target = overrides.get((employee["employee_key"], target_start.isoformat()), period_target)
             targets = [selected_target / len(columns) for _ in columns]

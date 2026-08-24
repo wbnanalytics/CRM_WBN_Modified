@@ -53,7 +53,7 @@ def performance_excel(report, product_field="all", product_query=""):
     book = Workbook()
     sheet = book.active
     sheet.title = "Sales Performance"
-    period_label = report["period"].title()
+    period_label = "Week End — Year" if report["period"] == "weekly_year" else report["period"].title()
     sheet.append(["WELLBEING NUTRITION — SHOPIFY SALES PERFORMANCE"])
     sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=5 + len(report["columns"]) * 2)
     sheet["A1"].fill = PatternFill("solid", fgColor=FOREST)

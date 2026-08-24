@@ -97,6 +97,21 @@
   margin-bottom: 30px;
 }
 
+.week-end-report-panel {
+  border-top: 3px solid #d7ef78;
+}
+
+.week-end-report-panel .panel-description {
+  color: #7a8981;
+  font-size: 11px;
+  margin: 6px 0 0;
+}
+
+.week-end-matrix-wrap {
+  scrollbar-color: #91a49a #eef2ec;
+  scrollbar-width: thin;
+}
+
 .sales-matrix-wrap {
   max-height: 68vh;
   overflow: auto;
