@@ -1,0 +1,303 @@
+import os
+import re
+from collections import defaultdict
+from calendar import monthrange
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
+
+import requests
+
+from database import (
+    finish_sync_run, latest_shopify_sync, list_shopify_employees,
+    replace_shopify_sales, seed_shopify_employees, shopify_sales_between,
+    start_sync_run,
+)
+
+
+IST = ZoneInfo("Asia/Kolkata")
+API_VERSION = "2026-07"
+
+ALIASES = {
+    "eeshikapoojari": ("eeshikapujari", "Eeshika Pujari"),
+    "shahnawazalam": ("shahnawazansari", "Shahnawaz Ansari"),
+}
+
+DEFAULT_EMPLOYEES = (
+    ("Akash Varma", "Sales", 170625),
+    ("Babita Bagdi", "Sales", 170625),
+    ("Eeshika Pujari", "Sales", 170625),
+    ("Rachana Rathod", "Sales", 170625),
+    ("Shubh Pajwani", "Sales", 170625),
+    ("Akshay Shah", "Sales", 170625),
+    ("Shahnawaz Ansari", "Sales", 170625),
+    ("Ajay Cynthala", "Sales", 170625),
+    ("Yusuf Shaikh", "Sales", 170625),
+    ("Muskan Padvekar", "CRM - CS - Emails", 85313),
+    ("Akil Shaikh", "CRM - CS - Emails", 85313),
+    ("Sampada Nayak", "CRM - CS - ORM", 85313),
+    ("Spriha Shukla", "CRM - CS - Calls", 85313),
+    ("Salman Shaikh", "CRM - CS - Calls", 85313),
+    ("Tapasya Dhekane", "CRM - CS - ORM", 85313),
+    ("Aditya Shinde", "CRM - CS - Limechat", 85313),
+    ("Shubham Kadam", "CRM - CS - Emails", 85313),
+    ("Purvi Gawade", "CRM - CS - Limechat", 85313),
+    ("Atul Aherwar", "Team Coach", 0),
+)
+
+
+class ShopifyError(RuntimeError):
+    pass
+
+
+def _env(*keys):
+    return next((os.getenv(key) for key in keys if os.getenv(key)), None)
+
+
+def shopify_configured():
+    return all(
+        (
+            _env("SHOPIFY_CLIENT_ID", "shopify-client-id"),
+            _env("SHOPIFY_CLIENT_SECRET", "shopify-client-secret"),
+            _env("SHOPIFY_STORE", "shopify-store"),
+        )
+    )
+
+
+def _employee_identity(name):
+    source = " ".join(str(name or "").split()).strip()
+    key = re.sub(r"[^a-z0-9]+", "", source.casefold())
+    if key in ALIASES:
+        return ALIASES[key]
+    display = " ".join(part.capitalize() for part in source.split())
+    return key, display
+
+
+def seed_default_employees():
+    rows = []
+    for name, role, target in DEFAULT_EMPLOYEES:
+        key, display = _employee_identity(name)
+        rows.append({
+            "employee_key": key, "source_name": name, "display_name": display,
+            "role": role, "weekly_target": target, "include_in_team": True,
+        })
+    seed_shopify_employees(rows)
+
+
+def _store_handle():
+    value = (_env("SHOPIFY_STORE", "shopify-store") or "").strip()
+    value = value.removeprefix("https://").rstrip("/")
+    return value.removesuffix(".myshopify.com")
+
+
+def _access_token():
+    response = requests.post(
+        f"https://{_store_handle()}.myshopify.com/admin/oauth/access_token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": _env("SHOPIFY_CLIENT_ID", "shopify-client-id"),
+            "client_secret": _env("SHOPIFY_CLIENT_SECRET", "shopify-client-secret"),
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not payload.get("access_token"):
+        raise ShopifyError(payload.get("error_description") or "Shopify did not issue an access token")
+    return payload["access_token"]
+
+
+def _shopifyql(token, query):
+    graphql = """query Report($query: String!) {
+      shopifyqlQuery(query: $query) {
+        tableData { columns { name dataType displayName } rows }
+        parseErrors
+      }
+    }"""
+    response = requests.post(
+        f"https://{_store_handle()}.myshopify.com/admin/api/{API_VERSION}/graphql.json",
+        headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"},
+        json={"query": graphql, "variables": {"query": query}},
+        timeout=90,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("errors"):
+        raise ShopifyError("; ".join(item.get("message", "Shopify query failed") for item in payload["errors"]))
+    result = (payload.get("data") or {}).get("shopifyqlQuery") or {}
+    if result.get("parseErrors"):
+        raise ShopifyError("; ".join(str(item) for item in result["parseErrors"]))
+    return (result.get("tableData") or {}).get("rows") or []
+
+
+def _month_chunks(start, end):
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, date(cursor.year, cursor.month, monthrange(cursor.year, cursor.month)[1]))
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
+
+
+def sync_shopify(start_date, end_date):
+    start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+    end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    if start > end:
+        raise ValueError("Start date must not be after end date")
+    if not shopify_configured():
+        raise ShopifyError("Shopify credentials are not configured")
+    seed_default_employees()
+    run_id = start_sync_run("shopify", "employee_sales", start.isoformat(), end.isoformat())
+    received = saved = 0
+    try:
+        token = _access_token()
+        for chunk_start, chunk_end in _month_chunks(start, end):
+            query = f"""FROM sales
+SHOW total_sales, orders
+TIMESERIES day
+GROUP BY staff_member_name
+SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
+ORDER BY day ASC
+LIMIT 1000"""
+            source_rows = _shopifyql(token, query)
+            received += len(source_rows)
+            combined = defaultdict(lambda: {"total_sales": 0.0, "order_count": 0, "source_names": set()})
+            discovered = {}
+            for row in source_rows:
+                source_name = row.get("staff_member_name")
+                if not source_name:
+                    continue
+                employee_key, display_name = _employee_identity(source_name)
+                day = str(row.get("day") or "")[:10]
+                if not employee_key or not day:
+                    continue
+                item = combined[(day, employee_key)]
+                item["total_sales"] += float(row.get("total_sales") or 0)
+                item["order_count"] += int(float(row.get("orders") or 0))
+                item["source_names"].add(str(source_name))
+                discovered[employee_key] = {
+                    "employee_key": employee_key, "source_name": str(source_name),
+                    "display_name": display_name, "role": "Unassigned",
+                    "weekly_target": 0, "include_in_team": False,
+                }
+            if discovered:
+                seed_shopify_employees(discovered.values())
+            rows = [
+                {
+                    "day": day, "employee_key": employee_key,
+                    "source_employee_name": " / ".join(sorted(item["source_names"])),
+                    "total_sales": item["total_sales"], "order_count": item["order_count"],
+                }
+                for (day, employee_key), item in combined.items()
+            ]
+            saved += replace_shopify_sales(chunk_start.isoformat(), chunk_end.isoformat(), rows)
+        finish_sync_run(run_id, "success", received, saved)
+        return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
+    except Exception as exc:
+        finish_sync_run(run_id, "failed", received, saved, str(exc)[:1000])
+        raise
+
+
+def _period_columns(period, anchor):
+    today = datetime.now(IST).date()
+    if period == "daily":
+        start = date(anchor.year, anchor.month, 1)
+        end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        columns = [
+            {"key": day.isoformat(), "label": day.strftime("%d %b"), "start": day, "end": day}
+            for day in (start + timedelta(days=index) for index in range((end - start).days + 1))
+        ]
+        target_multiplier, period_target_divisor = 4, 5.5
+    elif period == "weekly":
+        month_start = date(anchor.year, anchor.month, 1)
+        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        first_sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
+        sundays = []
+        cursor = first_sunday
+        while cursor <= month_end:
+            sundays.append(cursor)
+            cursor += timedelta(days=7)
+        columns = [
+            {
+                "key": sunday.isoformat(),
+                "label": f"{(sunday - timedelta(days=6)).strftime('%d %b')} – {sunday.strftime('%d %b')}",
+                "start": sunday - timedelta(days=6), "end": sunday,
+            }
+            for sunday in sundays
+        ]
+        start, end = columns[0]["start"], columns[-1]["end"]
+        target_multiplier, period_target_divisor = 4, 1
+    else:
+        period = "monthly"
+        start, end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
+        columns = []
+        for month in range(1, 13):
+            month_start = date(anchor.year, month, 1)
+            month_end = date(anchor.year, month, monthrange(anchor.year, month)[1])
+            columns.append({
+                "key": month_start.isoformat(), "label": month_start.strftime("%b"),
+                "start": month_start, "end": month_end,
+            })
+        target_multiplier, period_target_divisor = len([c for c in columns if c["start"] <= today]), 0.25
+    return period, start, end, columns, target_multiplier, period_target_divisor
+
+
+def sales_report(period="daily", anchor=None):
+    anchor = anchor or datetime.now(IST).date()
+    period, start, end, columns, target_multiplier, target_divisor = _period_columns(period, anchor)
+    sales = shopify_sales_between(start.isoformat(), end.isoformat())
+    configs = {item["employee_key"]: item for item in list_shopify_employees() if item["active"]}
+    for item in sales:
+        configs.setdefault(item["employee_key"], {
+            "employee_key": item["employee_key"], "display_name": item["display_name"],
+            "role": item["role"], "weekly_target": item["weekly_target"],
+            "include_in_team": item["include_in_team"], "active": 1,
+        })
+    by_employee_day = defaultdict(lambda: {"sales": 0.0, "orders": 0})
+    for item in sales:
+        slot = by_employee_day[(item["employee_key"], item["day"])]
+        slot["sales"] += float(item["total_sales"])
+        slot["orders"] += int(item["order_count"])
+    rows = []
+    for employee in configs.values():
+        values = []
+        order_values = []
+        for column in columns:
+            cursor = column["start"]
+            amount = orders = 0
+            while cursor <= column["end"]:
+                item = by_employee_day[(employee["employee_key"], cursor.isoformat())]
+                amount += item["sales"]
+                orders += item["orders"]
+                cursor += timedelta(days=1)
+            values.append(amount)
+            order_values.append(orders)
+        weekly_target = float(employee.get("weekly_target") or 0)
+        period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
+        total_target = weekly_target * target_multiplier
+        total = sum(values)
+        rows.append({
+            **employee, "values": values, "order_values": order_values,
+            "period_target": period_target, "total_target": total_target,
+            "total": total, "orders": sum(order_values),
+            "attainment": total / total_target if total_target else None,
+        })
+    role_order = {"Sales": 0, "CRM - CS": 1, "Team Coach": 2, "Unassigned": 9}
+    rows.sort(key=lambda item: (
+        0 if item.get("include_in_team") else 1,
+        next((rank for role, rank in role_order.items() if item["role"].startswith(role)), 8),
+        item["display_name"],
+    ))
+    team_rows = [row for row in rows if row.get("include_in_team")]
+    team_values = [sum(row["values"][i] for row in team_rows) for i in range(len(columns))]
+    team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
+    team_target = sum(row["total_target"] for row in team_rows)
+    return {
+        "period": period, "anchor": anchor, "start": start, "end": end,
+        "columns": columns, "rows": rows,
+        "team": {
+            "values": team_values, "orders_by_period": team_orders,
+            "total": sum(team_values), "orders": sum(team_orders),
+            "target": team_target,
+            "attainment": sum(team_values) / team_target if team_target else 0,
+        },
+        "last_sync": latest_shopify_sync(),
+    }

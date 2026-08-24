@@ -1,5 +1,7 @@
 import os
 import secrets
+import subprocess
+import sys
 from datetime import date, datetime, timedelta, timezone
 from functools import wraps
 from pathlib import Path
@@ -12,12 +14,14 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, get_portal_permissions, get_portal_user, init_db,
-    list_portal_users, recent_sync_runs, save_portal_user, set_portal_permissions, zoho_metrics,
+    latest_sync_request, list_portal_users, queue_sync_request, recent_sync_runs,
+    save_portal_user, set_portal_permissions, zoho_metrics,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
 from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
+from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 
 
 load_dotenv()
@@ -50,6 +54,7 @@ PORTAL_PERMISSIONS = (
     ("zoho.customer_escalation", "Zoho · Customer Escalation", "Escalation queue tickets"),
     ("bik.customer_tickets", "BIK · Customer Tickets", "Ticket performance and service metrics"),
     ("bik.all_conversations", "BIK · All Conversations", "Conversation and message metrics"),
+    ("shopify.view", "Shopify · Sales Reports", "Daily, weekly and monthly employee sales"),
     ("scorecard.view", "Scorecard · Dashboard", "Scorecard overview and performance trends"),
     ("scorecard.agents", "Scorecard · Agents", "Create and maintain the agent directory"),
     ("scorecard.scorecards", "Scorecard · Scorecards", "Create, score and export monthly scorecards"),
@@ -76,10 +81,18 @@ REPORT_SOURCES = {
         "reports": ["All Conversation Report", "Customer Ticket Report"],
         "required_keys": ["BIK_KEY", "BIK_SECRET", "BIK_APP_ID"],
     },
+    "shopify": {
+        "name": "Shopify Sales",
+        "description": "Employee-attributed daily, weekly and monthly sales",
+        "reports": ["Daily Sales", "Weekly Sales", "Monthly Sales"],
+        "required_keys": ["SHOPIFY_CLIENT_ID", "SHOPIFY_CLIENT_SECRET", "SHOPIFY_STORE"],
+    },
 }
 
 
 def connector_status(source):
+    if source == "shopify":
+        return "configured" if shopify_configured() else "needs_setup"
     config = REPORT_SOURCES[source]
     configured = all(os.getenv(key) for key in config["required_keys"])
     return "configured" if configured else "needs_setup"
@@ -241,6 +254,22 @@ def inject_globals():
     }
 
 
+@app.template_filter("inr")
+def indian_currency(value):
+    number = int(round(float(value or 0)))
+    sign = "-" if number < 0 else ""
+    digits = str(abs(number))
+    if len(digits) > 3:
+        tail = digits[-3:]
+        head = digits[:-3]
+        groups = []
+        while head:
+            groups.append(head[-2:])
+            head = head[:-2]
+        digits = ",".join(reversed(groups)) + "," + tail
+    return f"{sign}₹{digits}"
+
+
 @app.route("/")
 def index():
     if session.get("preview_user") or session.get("user"):
@@ -250,6 +279,8 @@ def index():
             return redirect(url_for("zoho"))
         if can_access("bik.customer_tickets") or can_access("bik.all_conversations"):
             return redirect(url_for("bik"))
+        if can_access("shopify.view"):
+            return redirect(url_for("shopify"))
         if can_access_scorecard():
             return redirect(url_for("scorecard"))
         if session.get("user", {}).get("role") == "admin":
@@ -318,6 +349,60 @@ def bik():
         report_key = allowed_reports[0]
     metrics = bik_metrics(start.isoformat(), end.isoformat()) if report_key == "customer_tickets" else bik_conversation_metrics(start.isoformat(), end.isoformat())
     return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, bik_report=report_key, allowed_bik_reports=allowed_reports, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
+
+
+@app.route("/shopify")
+@permission_required("shopify.view")
+def shopify():
+    seed_default_employees()
+    period = request.args.get("period", "daily")
+    if period not in {"daily", "weekly", "monthly"}:
+        period = "daily"
+    today = datetime.now(IST).date()
+    try:
+        if period == "monthly":
+            year = int(request.args.get("year", today.year))
+            anchor = date(year, 1, 1)
+        else:
+            month = request.args.get("month", today.strftime("%Y-%m"))
+            anchor = date.fromisoformat(f"{month}-01")
+    except (TypeError, ValueError):
+        anchor = date(today.year, today.month, 1)
+    report = shopify_sales_report(period, anchor)
+    return render_template(
+        "shopify.html", active_page="shopify", page_title="Shopify Sales",
+        source=REPORT_SOURCES["shopify"], report=report, period=period,
+        selected_month=anchor.strftime("%Y-%m"), selected_year=anchor.year,
+        available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
+    )
+
+
+@app.route("/api/sync/all", methods=["POST"])
+@permission_required("dashboard")
+def request_full_sync():
+    require_json_csrf()
+    sync_request, created = queue_sync_request(session["user"]["email"])
+    if created:
+        if os.getenv("APP_ENV") == "production":
+            trigger = Path(os.getenv("CRM_DATA_DIR", Path(__file__).resolve().parent / "data")) / "manual-sync.trigger"
+            trigger.parent.mkdir(parents=True, exist_ok=True)
+            trigger.touch()
+        else:
+            subprocess.Popen(
+                [sys.executable, str(Path(__file__).resolve().parent / "sync_all.py")],
+                cwd=Path(__file__).resolve().parent,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+            )
+    return jsonify({
+        "id": sync_request["id"], "status": sync_request["status"],
+        "message": "Data refresh queued" if created else "A data refresh is already in progress",
+    }), 202
+
+
+@app.route("/api/sync/status")
+@permission_required("dashboard")
+def full_sync_status():
+    return jsonify(latest_sync_request() or {"status": "idle"})
 
 
 @app.route("/scorecard")
@@ -574,6 +659,7 @@ def api_status():
         "app": "ready",
         "zoho": connector_status("zoho"),
         "bik": connector_status("bik"),
+        "shopify": connector_status("shopify"),
         "checkedAt": datetime.now(timezone.utc).isoformat(),
         "recentSyncs": recent_sync_runs(5),
     })
@@ -616,6 +702,8 @@ def microsoft_callback():
         return redirect(url_for("zoho"))
     if any(key.startswith("bik.") for key in permissions):
         return redirect(url_for("bik"))
+    if "shopify.view" in permissions:
+        return redirect(url_for("shopify"))
     return redirect(url_for("scorecard"))
 
 

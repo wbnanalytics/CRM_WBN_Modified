@@ -1,0 +1,186 @@
+.source-icon.shopify,
+.table-source.shopify {
+  background: #e5f6e8;
+  color: #15803d;
+}
+
+.heading-actions,
+.sync-control,
+.sales-period-form,
+.shopify-toolbar,
+.sales-tabs {
+  display: flex;
+  align-items: center;
+}
+
+.heading-actions {
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.sync-control {
+  align-items: flex-end;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sync-control small,
+.report-footnote,
+.sales-matrix td small {
+  color: var(--muted, #708078);
+}
+
+.sync-all-button {
+  min-width: 168px;
+}
+
+.sync-all-button[disabled] {
+  cursor: wait;
+  opacity: .7;
+}
+
+.shopify-toolbar {
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 24px;
+  padding: 16px 20px;
+}
+
+.sales-tabs {
+  gap: 8px;
+}
+
+.sales-tabs a {
+  border: 1px solid #dbe2dc;
+  border-radius: 12px;
+  color: #607068;
+  font-weight: 700;
+  padding: 10px 18px;
+  text-decoration: none;
+}
+
+.sales-tabs a.active {
+  background: #123f33;
+  border-color: #123f33;
+  color: #fff;
+}
+
+.sales-period-form {
+  gap: 10px;
+}
+
+.sales-period-form label {
+  display: grid;
+  gap: 5px;
+}
+
+.sales-period-form label span {
+  color: #718078;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.sales-period-form input,
+.sales-period-form select {
+  background: #fff;
+  border: 1px solid #d7ded8;
+  border-radius: 10px;
+  color: #183029;
+  font: inherit;
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.sales-report-panel {
+  margin-bottom: 30px;
+}
+
+.sales-matrix-wrap {
+  max-height: 68vh;
+  overflow: auto;
+}
+
+.sales-matrix {
+  min-width: 1150px;
+  white-space: nowrap;
+}
+
+.sales-matrix th {
+  background: #f4f6f1;
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.sales-matrix th:first-child,
+.sales-matrix td:first-child {
+  background: #fff;
+  left: 0;
+  position: sticky;
+  z-index: 1;
+}
+
+.sales-matrix th:first-child {
+  background: #f4f6f1;
+  z-index: 3;
+}
+
+.sales-matrix td small {
+  display: block;
+  font-size: 11px;
+  margin-top: 3px;
+}
+
+.team-total-row td,
+.team-total-row td:first-child {
+  background: #eaf2e7;
+}
+
+.unassigned-row {
+  opacity: .72;
+}
+
+.attainment-pill {
+  background: #f4e7d3;
+  border-radius: 999px;
+  color: #9a621a;
+  display: inline-block;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 5px 9px;
+}
+
+.attainment-pill.good {
+  background: #dff1e3;
+  color: #2e7447;
+}
+
+.attainment-pill.mid {
+  background: #eef0d7;
+  color: #67711b;
+}
+
+.report-footnote {
+  font-size: 13px;
+  margin: 16px 4px 0;
+}
+
+@media (max-width: 760px) {
+  .heading-actions,
+  .shopify-toolbar,
+  .sales-period-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .sync-control {
+    align-items: stretch;
+  }
+
+  .sales-tabs {
+    overflow-x: auto;
+  }
+}

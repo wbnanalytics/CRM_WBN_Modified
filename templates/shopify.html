@@ -1,0 +1,72 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-heading source-heading shopify-heading">
+  <div>
+    <span class="eyebrow">SALES REPORTING / SHOPIFY</span>
+    <h1>Employee Sales</h1>
+    <p>Daily, Monday–Sunday weekly, and monthly performance from Shopify.</p>
+  </div>
+  <div class="sync-stamp">
+    <span class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
+      {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at[:16].replace('T', ' ') }} UTC{% else %}Awaiting first sync{% endif %}
+    </span>
+  </div>
+</section>
+
+<section class="shopify-toolbar panel">
+  <div class="report-tabs sales-tabs">
+    {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly')] %}
+      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, month=selected_month, year=selected_year) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <form method="get" class="sales-period-form">
+    <input type="hidden" name="period" value="{{ period }}">
+    {% if period == 'monthly' %}
+      <label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selected_year }}>{{ year }}</option>{% endfor %}</select></label>
+    {% else %}
+      <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
+    {% endif %}
+    <button class="filter-button" type="submit">Apply</button>
+  </form>
+</section>
+
+<section class="metric-grid sales-metric-grid" aria-label="Shopify sales summary">
+  <article class="metric-card featured"><div class="metric-top"><span>Managed team sales</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{ '{:,}'.format(report.team.orders) }}</strong><p>Orders assigned to configured team members</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Target for the selected reporting period</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Attainment</span><span class="metric-symbol blue">↗</span></div><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong><p>Managed team sales versus target</p></article>
+</section>
+
+<section class="panel sales-report-panel">
+  <div class="panel-head">
+    <div><span class="eyebrow">{{ period|upper }} REPORT</span><h2>Sales performance by employee</h2></div>
+    <span class="count-badge">Monday–Sunday weeks</span>
+  </div>
+  <div class="table-wrap sales-matrix-wrap">
+    <table class="sales-matrix">
+      <thead><tr>
+        <th>Employee</th><th>Role</th><th>{{ 'Daily' if period == 'daily' else ('Weekly' if period == 'weekly' else 'Monthly') }} target</th>
+        {% for column in report.columns %}<th>{{ column.label }}</th>{% endfor %}
+        <th>Total</th><th>Attainment</th>
+      </tr></thead>
+      <tbody>
+        <tr class="team-total-row">
+          <td><strong>CRM Team</strong></td><td>Managed team</td><td>—</td>
+          {% for value in report.team['values'] %}<td>{{ value|inr }}</td>{% endfor %}
+          <td><strong>{{ report.team.total|inr }}</strong></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
+        </tr>
+        {% for employee in report.rows %}
+        <tr class="{{ 'unassigned-row' if not employee.include_in_team }}">
+          <td><strong>{{ employee.display_name }}</strong>{% if not employee.include_in_team %}<small>Not in managed team</small>{% endif %}</td>
+          <td>{{ employee.role }}</td><td>{{ employee.period_target|inr if employee.period_target else '—' }}</td>
+          {% for value in employee['values'] %}<td>{{ value|inr if value else '—' }}</td>{% endfor %}
+          <td><strong>{{ employee.total|inr }}</strong></td>
+          <td>{% if employee.attainment is not none %}<span class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{ (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="report-footnote">Sales use Shopify’s attributed <strong>Total sales</strong> metric grouped by staff member. Blank Employee orders are excluded, matching the manager’s Employee filter.</p>
+</section>
+{% endblock %}

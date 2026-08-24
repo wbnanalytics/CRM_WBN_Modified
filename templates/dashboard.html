@@ -2,7 +2,13 @@
 {% block content %}
 <section class="page-heading">
   <div><span class="eyebrow">CS METRIC</span><h1>Good morning, team.</h1><p>Your customer support picture, ready for review.</p></div>
-  <div class="heading-actions">{% include '_date_filter.html' %}</div>
+  <div class="heading-actions">
+    <div class="sync-control">
+      <button class="primary-button sync-all-button" type="button" data-sync-all data-csrf="{{ csrf_token() }}">Refresh All Data</button>
+      <small data-sync-message>Zoho, BIK and Shopify</small>
+    </div>
+    {% include '_date_filter.html' %}
+  </div>
 </section>
 <section class="metric-grid" aria-label="Metric summary">
   <article class="metric-card featured"><div class="metric-top"><span>Total tickets</span><span class="trend neutral">Live data</span></div><strong>{{ total }}</strong><p>{{ start.strftime('%d %b') }} – {{ end.strftime('%d %b %Y') }}</p></article>
@@ -30,6 +36,7 @@
     <tr><td><strong>Escalation Queue</strong></td><td><span class="table-source zoho">Z</span> Zoho Desk</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('zoho') }}">Open →</a></td></tr>
     <tr><td><strong>Customer Ticket Report</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
     <tr><td><strong>All Conversations</strong></td><td><span class="table-source bik">B</span> BIK</td><td>09:00 / 21:00 IST</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('bik') }}">Open →</a></td></tr>
+    <tr><td><strong>Employee Sales</strong></td><td><span class="table-source shopify">S</span> Shopify</td><td>Every hour</td><td><span class="status"><i></i>Active</span></td><td><a href="{{ url_for('shopify') }}">Open →</a></td></tr>
   </tbody></table></div>
 </section>
 {% endblock %}

@@ -146,6 +146,39 @@ def init_db():
                 synced_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS shopify_sales_daily (
+                day TEXT NOT NULL,
+                employee_key TEXT NOT NULL,
+                source_employee_name TEXT NOT NULL,
+                total_sales REAL NOT NULL DEFAULT 0,
+                order_count INTEGER NOT NULL DEFAULT 0,
+                synced_at TEXT NOT NULL,
+                PRIMARY KEY (day, employee_key)
+            );
+
+            CREATE TABLE IF NOT EXISTS shopify_employee_config (
+                employee_key TEXT PRIMARY KEY,
+                source_name TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'Unassigned',
+                weekly_target REAL NOT NULL DEFAULT 0,
+                include_in_team INTEGER NOT NULL DEFAULT 0,
+                active INTEGER NOT NULL DEFAULT 1,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS sync_requests (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                requested_by TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'queued'
+                    CHECK (status IN ('queued','running','success','failed')),
+                requested_at TEXT NOT NULL,
+                started_at TEXT,
+                completed_at TEXT,
+                result_json TEXT,
+                error_message TEXT
+            );
+
             CREATE TABLE IF NOT EXISTS portal_users (
                 email TEXT PRIMARY KEY,
                 display_name TEXT,
@@ -309,6 +342,10 @@ def init_db():
                 ON bik_tickets(local_date, channel);
             CREATE INDEX IF NOT EXISTS idx_bik_conversations_date_channel
                 ON bik_conversations(local_date, channel);
+            CREATE INDEX IF NOT EXISTS idx_shopify_sales_day
+                ON shopify_sales_daily(day);
+            CREATE INDEX IF NOT EXISTS idx_sync_requests_status
+                ON sync_requests(status, requested_at DESC);
             CREATE INDEX IF NOT EXISTS idx_crm_scorecards_agent_date
                 ON crm_scorecards(agent_id, evaluation_date DESC);
             CREATE INDEX IF NOT EXISTS idx_crm_appraisals_agent_date
@@ -558,6 +595,163 @@ def recent_sync_runs(limit=10):
             (limit,),
         ).fetchall()
     return [dict(row) for row in rows]
+
+
+def seed_shopify_employees(employees):
+    now = utc_now()
+    with db_connection() as db:
+        db.executemany(
+            """INSERT INTO shopify_employee_config
+               (employee_key, source_name, display_name, role, weekly_target,
+                include_in_team, active, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+               ON CONFLICT(employee_key) DO UPDATE SET
+                 source_name=excluded.source_name,
+                 display_name=CASE
+                   WHEN shopify_employee_config.role='Unassigned' THEN excluded.display_name
+                   ELSE shopify_employee_config.display_name END,
+                 role=CASE
+                   WHEN shopify_employee_config.role='Unassigned' THEN excluded.role
+                   ELSE shopify_employee_config.role END,
+                 weekly_target=CASE
+                   WHEN shopify_employee_config.role='Unassigned' THEN excluded.weekly_target
+                   ELSE shopify_employee_config.weekly_target END,
+                 include_in_team=CASE
+                   WHEN shopify_employee_config.role='Unassigned' THEN excluded.include_in_team
+                   ELSE shopify_employee_config.include_in_team END,
+                 updated_at=excluded.updated_at""",
+            [
+                (
+                    item["employee_key"], item["source_name"], item["display_name"],
+                    item["role"], item["weekly_target"], int(item["include_in_team"]), now,
+                )
+                for item in employees
+            ],
+        )
+
+
+def replace_shopify_sales(start_date, end_date, rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute(
+            "DELETE FROM shopify_sales_daily WHERE day BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        db.executemany(
+            """INSERT INTO shopify_sales_daily
+               (day, employee_key, source_employee_name, total_sales, order_count, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(day, employee_key) DO UPDATE SET
+                 source_employee_name=excluded.source_employee_name,
+                 total_sales=excluded.total_sales,
+                 order_count=excluded.order_count,
+                 synced_at=excluded.synced_at""",
+            [
+                (
+                    row["day"], row["employee_key"], row["source_employee_name"],
+                    float(row["total_sales"]), int(row["order_count"]), now,
+                )
+                for row in rows
+            ],
+        )
+    return len(rows)
+
+
+def shopify_sales_between(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT s.day, s.employee_key, s.source_employee_name,
+                      COALESCE(c.display_name, s.source_employee_name) AS display_name,
+                      COALESCE(c.role, 'Unassigned') AS role,
+                      COALESCE(c.weekly_target, 0) AS weekly_target,
+                      COALESCE(c.include_in_team, 0) AS include_in_team,
+                      COALESCE(c.active, 1) AS active,
+                      s.total_sales, s.order_count, s.synced_at
+               FROM shopify_sales_daily s
+               LEFT JOIN shopify_employee_config c ON c.employee_key=s.employee_key
+               WHERE s.day BETWEEN ? AND ?
+               ORDER BY display_name, s.day""",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def list_shopify_employees():
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT employee_key, source_name, display_name, role, weekly_target,
+                      include_in_team, active, updated_at
+               FROM shopify_employee_config
+               ORDER BY include_in_team DESC, role, display_name"""
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def latest_shopify_sync():
+    with db_connection() as db:
+        row = db.execute(
+            """SELECT id, source, report_key, range_start, range_end, status,
+                      rows_received, rows_saved, error_message, created_at, completed_at
+               FROM sync_runs WHERE source='shopify' ORDER BY id DESC LIMIT 1"""
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def queue_sync_request(requested_by):
+    now = utc_now()
+    with db_connection() as db:
+        existing = db.execute(
+            """SELECT * FROM sync_requests WHERE status IN ('queued','running')
+               ORDER BY id DESC LIMIT 1"""
+        ).fetchone()
+        if existing:
+            return dict(existing), False
+        cursor = db.execute(
+            """INSERT INTO sync_requests (requested_by, status, requested_at)
+               VALUES (?, 'queued', ?)""",
+            (requested_by, now),
+        )
+        row = db.execute("SELECT * FROM sync_requests WHERE id=?", (cursor.lastrowid,)).fetchone()
+    return dict(row), True
+
+
+def claim_sync_request():
+    with db_connection() as db:
+        row = db.execute(
+            "SELECT * FROM sync_requests WHERE status='queued' ORDER BY id LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        db.execute(
+            "UPDATE sync_requests SET status='running', started_at=? WHERE id=?",
+            (utc_now(), row["id"]),
+        )
+        claimed = db.execute("SELECT * FROM sync_requests WHERE id=?", (row["id"],)).fetchone()
+    return dict(claimed)
+
+
+def finish_sync_request(request_id, status, result=None, error=None):
+    if status not in {"success", "failed"}:
+        raise ValueError("Invalid final sync status")
+    with db_connection() as db:
+        db.execute(
+            """UPDATE sync_requests
+               SET status=?, result_json=?, error_message=?, completed_at=? WHERE id=?""",
+            (status, json.dumps(result or {}, ensure_ascii=False), error, utc_now(), request_id),
+        )
+
+
+def latest_sync_request():
+    with db_connection() as db:
+        row = db.execute("SELECT * FROM sync_requests ORDER BY id DESC LIMIT 1").fetchone()
+    if not row:
+        return None
+    result = dict(row)
+    try:
+        result["result"] = json.loads(result.pop("result_json") or "{}")
+    except json.JSONDecodeError:
+        result["result"] = {}
+    return result
 
 
 def _row_hash(row):

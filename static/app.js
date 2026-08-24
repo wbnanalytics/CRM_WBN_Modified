@@ -10,3 +10,50 @@ document.querySelectorAll("[data-date-filter]").forEach((form) => {
     if (!isCustom) form.submit();
   });
 });
+
+const syncButton = document.querySelector("[data-sync-all]");
+const syncMessage = document.querySelector("[data-sync-message]");
+if (syncButton) {
+  let pollTimer;
+  const setSyncState = (status, message) => {
+    const busy = status === "queued" || status === "running";
+    syncButton.disabled = busy;
+    syncButton.textContent = busy ? "Refreshing Data…" : "Refresh All Data";
+    if (syncMessage && message) syncMessage.textContent = message;
+    if (!busy && pollTimer) clearTimeout(pollTimer);
+  };
+  const pollSync = async () => {
+    try {
+      const response = await fetch("/api/sync/status", {headers: {Accept: "application/json"}});
+      const data = await response.json();
+      if (data.status === "queued" || data.status === "running") {
+        setSyncState(data.status, data.status === "queued" ? "Refresh queued…" : "Refreshing Zoho, BIK and Shopify…");
+        pollTimer = setTimeout(pollSync, 3000);
+      } else if (data.status === "success") {
+        setSyncState(data.status, "All data refreshed successfully");
+      } else if (data.status === "failed") {
+        setSyncState(data.status, "Refresh finished with an error — please retry");
+      } else {
+        setSyncState(data.status, "Zoho, BIK and Shopify");
+      }
+    } catch (_) {
+      setSyncState("failed", "Unable to check refresh status");
+    }
+  };
+  syncButton.addEventListener("click", async () => {
+    setSyncState("queued", "Requesting a fresh copy of all data…");
+    try {
+      const response = await fetch("/api/sync/all", {
+        method: "POST",
+        headers: {"Content-Type": "application/json", "X-CSRF-Token": syncButton.dataset.csrf},
+        body: "{}",
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Refresh request failed");
+      pollSync();
+    } catch (error) {
+      setSyncState("failed", error.message || "Refresh request failed");
+    }
+  });
+  pollSync();
+}

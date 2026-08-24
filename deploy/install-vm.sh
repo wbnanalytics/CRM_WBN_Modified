@@ -10,6 +10,8 @@ if ! command -v certbot >/dev/null 2>&1; then
 fi
 
 install -d -o wbncrm -g www-data /var/lib/wbn-crm /var/backups/wbn-crm
+touch /var/lib/wbn-crm/manual-sync.trigger
+chown wbncrm:www-data /var/lib/wbn-crm/manual-sync.trigger
 python3 -m venv "$VENV_DIR"
 "$VENV_DIR/bin/pip" install -q --upgrade pip
 "$VENV_DIR/bin/pip" install -q -r "$APP_DIR/requirements.txt"
@@ -50,10 +52,14 @@ install -m 644 "$APP_DIR/deploy/wbn-crm-backup.service" /etc/systemd/system/wbn-
 install -m 644 "$APP_DIR/deploy/wbn-crm-backup.timer" /etc/systemd/system/wbn-crm-backup.timer
 install -m 644 "$APP_DIR/deploy/wbn-crm-cert.service" /etc/systemd/system/wbn-crm-cert.service
 install -m 644 "$APP_DIR/deploy/wbn-crm-cert.timer" /etc/systemd/system/wbn-crm-cert.timer
+install -m 644 "$APP_DIR/deploy/wbn-crm-shopify.service" /etc/systemd/system/wbn-crm-shopify.service
+install -m 644 "$APP_DIR/deploy/wbn-crm-shopify.timer" /etc/systemd/system/wbn-crm-shopify.timer
+install -m 644 "$APP_DIR/deploy/wbn-crm-manual-sync.service" /etc/systemd/system/wbn-crm-manual-sync.service
+install -m 644 "$APP_DIR/deploy/wbn-crm-manual-sync.path" /etc/systemd/system/wbn-crm-manual-sync.path
 install -m 644 "$APP_DIR/deploy/nginx-crm.conf" /etc/nginx/sites-available/wbn-crm
 ln -sfn /etc/nginx/sites-available/wbn-crm /etc/nginx/sites-enabled/wbn-crm
 nginx -t
 systemctl reload nginx
 
 systemctl daemon-reload
-systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer wbn-crm-cert.timer
+systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer wbn-crm-cert.timer wbn-crm-shopify.timer wbn-crm-manual-sync.path
