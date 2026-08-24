@@ -173,13 +173,16 @@ document.querySelectorAll('[data-open-appraisal]').forEach(button=>button.addEve
 async function saveAppraisal(status){const form=document.getElementById('appraisalForm');const rows=[...document.querySelectorAll('#appraisalEditorRows tr')].map(tr=>({id:Number(tr.dataset.rowId),rating:tr.querySelector('[data-field="rating"]').value,comments:tr.querySelector('[data-field="comments"]').value}));const body=Object.fromEntries(new FormData(form));body.status=status;body.rows=rows;await scoreApi('PUT',`/api/scorecard/appraisals/${form.elements.id.value}`,body);location.hash='#scorecard-appraisals';location.reload();}
 document.querySelectorAll('[data-appraisal-status]').forEach(button=>button.addEventListener('click',async()=>{try{await saveAppraisal(button.dataset.appraisalStatus);}catch(error){alert(error.message);}}));
 
-async function sendResultEmail(type, formId) {
+async function sendResultEmail(type, formId, button) {
   const form=document.getElementById(formId); const recipient=prompt('Confirm the recipient work email:', type==='scorecard'?currentScorecard.employee_email:currentAppraisal.employee_email); if(!recipient)return;
   if(!confirm(`Send this finalized ${type} to ${recipient}?`))return;
-  try {const result=await scoreApi('POST',`/api/scorecard/${type}/${form.elements.id.value}/email`,{recipient});alert(result.message);location.reload();}catch(error){alert(error.message);}
+  const originalLabel=button?.textContent || 'Send Email';
+  if(button){button.disabled=true;button.setAttribute('aria-busy','true');button.textContent='Sending…';}
+  try {const result=await scoreApi('POST',`/api/scorecard/${type}/${form.elements.id.value}/email`,{recipient});if(button)button.textContent='Sent';alert(result.message);location.reload();}
+  catch(error){alert(error.message);if(button){button.disabled=false;button.removeAttribute('aria-busy');button.textContent=originalLabel;}}
 }
-document.getElementById('sendScorecardEmail')?.addEventListener('click',()=>sendResultEmail('scorecard','scorecardForm'));
-document.getElementById('sendAppraisalEmail')?.addEventListener('click',()=>sendResultEmail('appraisal','appraisalForm'));
+document.getElementById('sendScorecardEmail')?.addEventListener('click',(event)=>sendResultEmail('scorecard','scorecardForm',event.currentTarget));
+document.getElementById('sendAppraisalEmail')?.addEventListener('click',(event)=>sendResultEmail('appraisal','appraisalForm',event.currentTarget));
 
 document.querySelectorAll('dialog').forEach(dialog=>dialog.addEventListener('click',(event)=>{if(event.target===dialog)dialog.close();}));
 document.querySelector('#newScorecardForm [name="evaluation_date"]')?.setAttribute('value',new Date().toISOString().slice(0,10));

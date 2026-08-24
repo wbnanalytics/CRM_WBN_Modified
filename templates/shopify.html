@@ -4,28 +4,32 @@
   <div>
     <span class="eyebrow">SALES REPORTING / SHOPIFY</span>
     <h1>Employee Sales</h1>
-    <p>Daily, weekly and monthly employee sales from Shopify.</p>
+    <p>Daily, weekly, monthly and yearly employee sales directly from Shopify.</p>
   </div>
   <div class="sync-stamp">
     <span class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
       {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at|ist_datetime }}{% else %}Awaiting first sync{% endif %}
     </span>
-    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, month=selected_month, year=selected_year) }}">Download Excel</a>
+    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week=selected_week, month=selected_month, year=selected_year) }}">Download Excel</a>
   </div>
 </section>
 
 <section class="shopify-toolbar panel">
   <div class="report-tabs sales-tabs">
-    {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly')] %}
-      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, month=selected_month, year=selected_year) }}">{{ label }}</a>
+    {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
+      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, date=selected_date, week=selected_week, month=selected_month, year=selected_year) }}">{{ label }}</a>
     {% endfor %}
   </div>
   <form method="get" class="sales-period-form">
     <input type="hidden" name="period" value="{{ period }}">
-    {% if period == 'monthly' %}
-      <label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selected_year }}>{{ year }}</option>{% endfor %}</select></label>
-    {% else %}
+    {% if period == 'daily' %}
+      <label><span>Date</span><input type="date" name="date" value="{{ selected_date }}"></label>
+    {% elif period == 'weekly' %}
+      <label><span>Week</span><input type="week" name="week" value="{{ selected_week }}"></label>
+    {% elif period == 'monthly' %}
       <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
+    {% else %}
+      <label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selected_year }}>{{ year }}</option>{% endfor %}</select></label>
     {% endif %}
     <button class="filter-button" type="submit">Apply</button>
   </form>
@@ -41,7 +45,7 @@
 <section class="panel sales-report-panel">
   <div class="panel-head">
     <div><span class="eyebrow">{{ period|upper }} REPORT</span><h2>Sales performance by employee</h2></div>
-    {% if period == 'weekly' %}<span class="count-badge">Monday–Sunday</span>{% endif %}
+    {% if period == 'weekly' %}<span class="count-badge">Monday–Sunday</span>{% elif period == 'yearly' %}<span class="count-badge">Month-by-month</span>{% endif %}
   </div>
   <div class="table-wrap sales-matrix-wrap">
     <table class="sales-matrix">

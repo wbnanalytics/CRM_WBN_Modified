@@ -197,16 +197,19 @@ LIMIT 1000"""
 
 
 def _period_columns(period, anchor):
-    today = datetime.now(IST).date()
     if period == "daily":
-        start = date(anchor.year, anchor.month, 1)
-        end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        columns = [
-            {"key": day.isoformat(), "label": day.strftime("%d %b"), "start": day, "end": day}
-            for day in (start + timedelta(days=index) for index in range((end - start).days + 1))
-        ]
+        start = end = anchor
+        columns = [{"key": anchor.isoformat(), "label": anchor.strftime("%d %b %Y"), "start": anchor, "end": anchor}]
         default_target_divisor = 5.5
     elif period == "weekly":
+        start = anchor - timedelta(days=anchor.weekday())
+        end = start + timedelta(days=6)
+        columns = [{
+            "key": end.isoformat(), "label": f"{start.strftime('%d %b')} – {end.strftime('%d %b %Y')}",
+            "start": start, "end": end,
+        }]
+        default_target_divisor = 1
+    elif period == "dashboard":
         month_start = date(anchor.year, anchor.month, 1)
         month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
         first_sunday = month_start + timedelta(days=(6 - month_start.weekday()) % 7)
@@ -225,8 +228,16 @@ def _period_columns(period, anchor):
         ]
         start, end = columns[0]["start"], columns[-1]["end"]
         default_target_divisor = 1
+    elif period == "monthly":
+        start = date(anchor.year, anchor.month, 1)
+        end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        columns = [{
+            "key": start.isoformat(), "label": start.strftime("%B %Y"),
+            "start": start, "end": end,
+        }]
+        default_target_divisor = 0.25
     else:
-        period = "monthly"
+        period = "yearly"
         start, end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
         columns = []
         for month in range(1, 13):
@@ -244,10 +255,10 @@ def sales_report(period="daily", anchor=None):
     anchor = anchor or datetime.now(IST).date()
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
-    override_rows = shopify_targets_between(
-        period, date(anchor.year, anchor.month, 1).isoformat() if period != "monthly" else start.isoformat(),
-        date(anchor.year, anchor.month, 1).isoformat() if period != "monthly" else end.isoformat(),
-    )
+    target_period = "weekly" if period == "dashboard" else ("monthly" if period == "yearly" else period)
+    target_start = date(anchor.year, anchor.month, 1)
+    target_end = end if period == "yearly" else target_start
+    override_rows = shopify_targets_between(target_period, target_start.isoformat(), target_end.isoformat())
     overrides = {
         (item["employee_key"], item["period_start"]): float(item["target_amount"])
         for item in override_rows
@@ -280,10 +291,10 @@ def sales_report(period="daily", anchor=None):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        targets = [
-            overrides.get((employee["employee_key"], (column["start"] if period == "monthly" else date(anchor.year, anchor.month, 1)).isoformat()), period_target)
-            for column in columns
-        ]
+        targets = [overrides.get(
+            (employee["employee_key"], (column["start"] if period == "yearly" else target_start).isoformat()),
+            period_target,
+        ) for column in columns]
         total_target = sum(targets)
         total = sum(values)
         rows.append({

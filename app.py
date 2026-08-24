@@ -339,7 +339,7 @@ def dashboard():
         anchor = date.fromisoformat(f"{month}-01")
     except (TypeError, ValueError):
         anchor = date(today.year, today.month, 1)
-    report = shopify_sales_report("weekly", anchor)
+    report = shopify_sales_report("dashboard", anchor)
     managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
     top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
@@ -384,22 +384,29 @@ def bik():
 def shopify():
     seed_default_employees()
     period = request.args.get("period", "daily")
-    if period not in {"daily", "weekly", "monthly"}:
+    if period not in {"daily", "weekly", "monthly", "yearly"}:
         period = "daily"
     today = datetime.now(IST).date()
     try:
-        if period == "monthly":
+        if period == "daily":
+            anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
+        elif period == "weekly":
+            iso_year, iso_week = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}").split("-W")
+            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
+        elif period == "yearly":
             year = int(request.args.get("year", today.year))
             anchor = date(year, 1, 1)
         else:
             month = request.args.get("month", today.strftime("%Y-%m"))
             anchor = date.fromisoformat(f"{month}-01")
     except (TypeError, ValueError):
-        anchor = date(today.year, today.month, 1)
+        anchor = today if period == "daily" else (today - timedelta(days=today.weekday()) if period == "weekly" else date(today.year, today.month if period == "monthly" else 1, 1))
     report = shopify_sales_report(period, anchor)
+    iso = anchor.isocalendar()
     return render_template(
         "shopify.html", active_page="shopify", page_title="Shopify Sales",
         source=REPORT_SOURCES["shopify"], report=report, period=period,
+        selected_date=anchor.isoformat(), selected_week=f"{iso.year}-W{iso.week:02}",
         selected_month=anchor.strftime("%Y-%m"), selected_year=anchor.year,
         available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
     )
@@ -409,15 +416,23 @@ def shopify():
 @permission_required("shopify.view")
 def download_shopify_performance():
     period = request.args.get("period", "daily")
-    if period not in {"daily", "weekly", "monthly"}:
+    if period not in {"daily", "weekly", "monthly", "yearly"}:
         period = "daily"
     today = datetime.now(IST).date()
     try:
-        anchor = date(int(request.args.get("year", today.year)), 1, 1) if period == "monthly" else date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+        if period == "daily":
+            anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
+        elif period == "weekly":
+            iso_year, iso_week = request.args.get("week", f"{today.isocalendar().year}-W{today.isocalendar().week:02}").split("-W")
+            anchor = date.fromisocalendar(int(iso_year), int(iso_week), 1)
+        elif period == "monthly":
+            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+        else:
+            anchor = date(int(request.args.get("year", today.year)), 1, 1)
     except (TypeError, ValueError):
-        anchor = date(today.year, today.month, 1)
+        anchor = today
     report = shopify_sales_report(period, anchor)
-    label = str(anchor.year) if period == "monthly" else anchor.strftime("%Y-%m")
+    label = str(anchor.year) if period == "yearly" else (anchor.strftime("%G-W%V") if period == "weekly" else anchor.isoformat() if period == "daily" else anchor.strftime("%Y-%m"))
     return send_file(
         performance_excel(report), as_attachment=True,
         download_name=f"shopify-sales-performance-{period}-{label}.xlsx",
