@@ -414,6 +414,8 @@ def microsoft_login():
 
 @app.route("/preview-login", methods=["POST"])
 def preview_login():
+    if microsoft_ready() and not app.debug:
+        abort(404)
     session.clear()
     session["user"] = {"name": "Varun", "email": PRIMARY_ADMIN_EMAIL, "role": "admin", "permissions": []}
     session["signed_in_at"] = datetime.now(IST).isoformat()
