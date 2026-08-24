@@ -77,3 +77,25 @@ document.querySelectorAll("[data-cs-tab]").forEach((button) => button.addEventLi
   document.querySelectorAll("[data-cs-tab]").forEach((item) => item.classList.toggle("active", item === button));
   document.querySelectorAll("[data-cs-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.csPanel === button.dataset.csTab));
 }));
+
+const productFilter = document.querySelector("[data-product-filter]");
+if (productFilter) {
+  const field = productFilter.querySelector("[data-product-field]");
+  const query = productFilter.querySelector("[data-product-query]");
+  const rows = [...document.querySelectorAll("[data-product-row]")];
+  const count = document.querySelector("[data-product-count]");
+  const applyProductFilter = () => {
+    const needle = query.value.trim().toLowerCase();
+    let visible = 0;
+    rows.forEach((row) => {
+      const haystack = field.value === "all" ? [row.dataset.employee, row.dataset.role, row.dataset.product, row.dataset.sku].join(" ") : row.dataset[field.value];
+      const matches = !needle || (haystack || "").includes(needle);
+      row.hidden = !matches;
+      visible += Number(matches);
+    });
+    if (count) count.textContent = `${visible} of ${rows.length} combinations`;
+  };
+  query.addEventListener("input", applyProductFilter);
+  field.addEventListener("change", applyProductFilter);
+  productFilter.querySelector("[data-product-clear]").addEventListener("click", () => { query.value = ""; field.value = "all"; applyProductFilter(); query.focus(); });
+}
