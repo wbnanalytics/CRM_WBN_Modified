@@ -2,7 +2,7 @@
 Description=Finalize the previous day's WBN CRM reports at 09:00 IST
 
 [Timer]
-OnCalendar=*-*-* 03:30:00 UTC
+OnCalendar=*-*-* 09:00:00 Asia/Kolkata
 Persistent=true
 RandomizedDelaySec=120
 

@@ -2,7 +2,7 @@
 Description=Refresh today's WBN CRM reports at 21:00 IST
 
 [Timer]
-OnCalendar=*-*-* 15:30:00 UTC
+OnCalendar=*-*-* 21:00:00 Asia/Kolkata
 Persistent=true
 RandomizedDelaySec=120
 

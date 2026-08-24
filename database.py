@@ -167,6 +167,17 @@ def init_db():
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS shopify_sales_targets (
+                employee_key TEXT NOT NULL,
+                period_type TEXT NOT NULL
+                    CHECK (period_type IN ('daily','weekly','monthly')),
+                period_start TEXT NOT NULL,
+                target_amount REAL NOT NULL CHECK (target_amount >= 0),
+                updated_by TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (employee_key, period_type, period_start)
+            );
+
             CREATE TABLE IF NOT EXISTS sync_requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 requested_by TEXT NOT NULL,
@@ -344,6 +355,8 @@ def init_db():
                 ON bik_conversations(local_date, channel);
             CREATE INDEX IF NOT EXISTS idx_shopify_sales_day
                 ON shopify_sales_daily(day);
+            CREATE INDEX IF NOT EXISTS idx_shopify_targets_period
+                ON shopify_sales_targets(period_type, period_start);
             CREATE INDEX IF NOT EXISTS idx_sync_requests_status
                 ON sync_requests(status, requested_at DESC);
             CREATE INDEX IF NOT EXISTS idx_crm_scorecards_agent_date
@@ -695,6 +708,44 @@ def latest_shopify_sync():
                FROM sync_runs WHERE source='shopify' ORDER BY id DESC LIMIT 1"""
         ).fetchone()
     return dict(row) if row else None
+
+
+def shopify_targets_between(period_type, start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT employee_key, period_type, period_start, target_amount,
+                      updated_by, updated_at
+               FROM shopify_sales_targets
+               WHERE period_type=? AND period_start BETWEEN ? AND ?""",
+            (period_type, start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def set_shopify_target(employee_key, period_type, period_start, target_amount, updated_by):
+    if period_type not in {"daily", "weekly", "monthly"}:
+        raise ValueError("Invalid target period")
+    amount = float(target_amount)
+    if amount < 0:
+        raise ValueError("Target cannot be negative")
+    with db_connection() as db:
+        employee = db.execute(
+            "SELECT employee_key FROM shopify_employee_config WHERE employee_key=? AND active=1",
+            (employee_key,),
+        ).fetchone()
+        if not employee:
+            raise ValueError("Employee was not found")
+        db.execute(
+            """INSERT INTO shopify_sales_targets
+               (employee_key, period_type, period_start, target_amount, updated_by, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(employee_key, period_type, period_start) DO UPDATE SET
+                 target_amount=excluded.target_amount,
+                 updated_by=excluded.updated_by,
+                 updated_at=excluded.updated_at""",
+            (employee_key, period_type, period_start, amount, updated_by, utc_now()),
+        )
+    return amount
 
 
 def queue_sync_request(requested_by):

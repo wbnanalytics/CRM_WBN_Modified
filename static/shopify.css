@@ -26,7 +26,6 @@
 }
 
 .sync-control small,
-.report-footnote,
 .sales-matrix td small {
   color: var(--muted, #708078);
 }
@@ -139,8 +138,29 @@
   background: #eaf2e7;
 }
 
-.unassigned-row {
-  opacity: .72;
+.sales-value,
+.cell-target {
+  display: block;
+}
+
+.cell-target {
+  color: #7b8a82;
+  font-size: 11px;
+  margin-top: 5px;
+}
+
+.target-edit-button {
+  background: transparent;
+  border: 0;
+  color: #1e604e;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  margin-left: 5px;
+  padding: 0;
+  text-decoration: underline;
+  text-decoration-color: #b5c8bf;
+  text-underline-offset: 2px;
 }
 
 .attainment-pill {
@@ -163,9 +183,99 @@
   color: #67711b;
 }
 
-.report-footnote {
+.target-dialog {
+  background: #fbfcf9;
+  border: 0;
+  border-radius: 22px;
+  box-shadow: 0 24px 80px rgba(12, 47, 37, .24);
+  color: #142a23;
+  max-width: 430px;
+  padding: 0;
+  width: calc(100% - 32px);
+}
+
+.target-dialog::backdrop {
+  background: rgba(8, 31, 24, .48);
+  backdrop-filter: blur(3px);
+}
+
+.target-dialog form {
+  padding: 28px;
+}
+
+.dialog-head,
+.dialog-actions,
+.target-context {
+  display: flex;
+  align-items: center;
+}
+
+.dialog-head {
+  justify-content: space-between;
+}
+
+.dialog-head h2 {
+  margin: 4px 0 0;
+}
+
+.icon-button {
+  background: #edf1ec;
+  border: 0;
+  border-radius: 10px;
+  color: #395048;
+  cursor: pointer;
+  font-size: 24px;
+  height: 38px;
+  line-height: 1;
+  width: 38px;
+}
+
+.target-context {
+  align-items: flex-start;
+  border-bottom: 1px solid #e2e8e2;
+  flex-direction: column;
+  gap: 3px;
+  margin: 22px 0;
+  padding-bottom: 18px;
+}
+
+.target-context span {
+  color: #718078;
   font-size: 13px;
-  margin: 16px 4px 0;
+}
+
+.target-amount-field {
+  display: grid;
+  gap: 8px;
+}
+
+.target-amount-field span {
+  color: #64736b;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.target-amount-field input {
+  border: 1px solid #cad5cd;
+  border-radius: 12px;
+  color: #153027;
+  font: 700 18px/1.2 "DM Sans", sans-serif;
+  padding: 13px 14px;
+}
+
+.dialog-actions {
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 22px;
+}
+
+.form-message {
+  color: #3b6e5c;
+  font-size: 13px;
+  min-height: 18px;
+  margin: 10px 0 0;
 }
 
 @media (max-width: 760px) {

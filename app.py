@@ -15,7 +15,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, get_portal_permissions, get_portal_user, init_db,
     latest_sync_request, list_portal_users, queue_sync_request, recent_sync_runs,
-    save_portal_user, set_portal_permissions, zoho_metrics,
+    save_portal_user, set_portal_permissions, set_shopify_target, zoho_metrics,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
@@ -270,6 +270,16 @@ def indian_currency(value):
     return f"{sign}₹{digits}"
 
 
+@app.template_filter("ist_datetime")
+def ist_datetime(value):
+    if not value:
+        return "—"
+    parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(IST).strftime("%d %b %Y, %I:%M %p IST")
+
+
 @app.route("/")
 def index():
     if session.get("preview_user") or session.get("user"):
@@ -403,6 +413,28 @@ def request_full_sync():
 @permission_required("dashboard")
 def full_sync_status():
     return jsonify(latest_sync_request() or {"status": "idle"})
+
+
+@app.route("/api/shopify/targets", methods=["POST"])
+@admin_required
+def save_shopify_target():
+    require_json_csrf()
+    payload = request.get_json(silent=True) or {}
+    try:
+        period = str(payload.get("period") or "")
+        period_start = date.fromisoformat(str(payload.get("period_start") or ""))
+        if period == "weekly" and period_start.weekday() != 0:
+            raise ValueError("Weekly targets must begin on Monday")
+        if period == "monthly" and period_start.day != 1:
+            raise ValueError("Monthly targets must begin on the first day")
+        amount = set_shopify_target(
+            str(payload.get("employee_key") or ""), period,
+            period_start.isoformat(), payload.get("target_amount"),
+            session["user"]["email"],
+        )
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc) or "Invalid target"}), 400
+    return jsonify({"status": "success", "target_amount": amount})
 
 
 @app.route("/scorecard")
@@ -613,8 +645,6 @@ def manage_users():
         role = request.form.get("role", "user")
         if not email.endswith("@wellbeingnutrition.com"):
             flash("Use a wellbeingnutrition.com email address.", "error")
-        elif role == "admin" and not is_super_admin():
-            flash("Only the Super Admin can create another Admin.", "error")
         else:
             save_portal_user(email, request.form.get("display_name"), role, True, session["user"]["email"])
             set_portal_permissions(email, request.form.getlist("permissions") if role == "user" else [], session["user"]["email"])
@@ -637,10 +667,6 @@ def update_user():
         abort(404)
     if email == PRIMARY_ADMIN_EMAIL:
         flash("The primary admin cannot be removed or demoted.", "error")
-    elif existing["role"] == "admin" and not is_super_admin():
-        abort(403)
-    elif request.form.get("role", existing["role"]) == "admin" and not is_super_admin():
-        flash("Only the Super Admin can grant Admin access.", "error")
     else:
         role = request.form.get("role", existing["role"])
         save_portal_user(

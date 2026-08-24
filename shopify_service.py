@@ -10,7 +10,7 @@ import requests
 from database import (
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
     replace_shopify_sales, seed_shopify_employees, shopify_sales_between,
-    start_sync_run,
+    shopify_targets_between, start_sync_run,
 )
 
 
@@ -205,7 +205,7 @@ def _period_columns(period, anchor):
             {"key": day.isoformat(), "label": day.strftime("%d %b"), "start": day, "end": day}
             for day in (start + timedelta(days=index) for index in range((end - start).days + 1))
         ]
-        target_multiplier, period_target_divisor = 4, 5.5
+        default_target_divisor = 5.5
     elif period == "weekly":
         month_start = date(anchor.year, anchor.month, 1)
         month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
@@ -224,7 +224,7 @@ def _period_columns(period, anchor):
             for sunday in sundays
         ]
         start, end = columns[0]["start"], columns[-1]["end"]
-        target_multiplier, period_target_divisor = 4, 1
+        default_target_divisor = 1
     else:
         period = "monthly"
         start, end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
@@ -236,14 +236,18 @@ def _period_columns(period, anchor):
                 "key": month_start.isoformat(), "label": month_start.strftime("%b"),
                 "start": month_start, "end": month_end,
             })
-        target_multiplier, period_target_divisor = len([c for c in columns if c["start"] <= today]), 0.25
-    return period, start, end, columns, target_multiplier, period_target_divisor
+        default_target_divisor = 0.25
+    return period, start, end, columns, default_target_divisor
 
 
 def sales_report(period="daily", anchor=None):
     anchor = anchor or datetime.now(IST).date()
-    period, start, end, columns, target_multiplier, target_divisor = _period_columns(period, anchor)
+    period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
+    overrides = {
+        (item["employee_key"], item["period_start"]): float(item["target_amount"])
+        for item in shopify_targets_between(period, start.isoformat(), end.isoformat())
+    }
     configs = {item["employee_key"]: item for item in list_shopify_employees() if item["active"]}
     for item in sales:
         configs.setdefault(item["employee_key"], {
@@ -272,11 +276,12 @@ def sales_report(period="daily", anchor=None):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        total_target = weekly_target * target_multiplier
+        targets = [overrides.get((employee["employee_key"], column["start"].isoformat()), period_target) for column in columns]
+        total_target = sum(targets)
         total = sum(values)
         rows.append({
             **employee, "values": values, "order_values": order_values,
-            "period_target": period_target, "total_target": total_target,
+            "period_target": period_target, "targets": targets, "total_target": total_target,
             "total": total, "orders": sum(order_values),
             "attainment": total / total_target if total_target else None,
         })
@@ -289,12 +294,13 @@ def sales_report(period="daily", anchor=None):
     team_rows = [row for row in rows if row.get("include_in_team")]
     team_values = [sum(row["values"][i] for row in team_rows) for i in range(len(columns))]
     team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
+    team_targets = [sum(row["targets"][i] for row in team_rows) for i in range(len(columns))]
     team_target = sum(row["total_target"] for row in team_rows)
     return {
         "period": period, "anchor": anchor, "start": start, "end": end,
         "columns": columns, "rows": rows,
         "team": {
-            "values": team_values, "orders_by_period": team_orders,
+            "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),
             "target": team_target,
             "attainment": sum(team_values) / team_target if team_target else 0,

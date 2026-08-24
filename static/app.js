@@ -57,3 +57,43 @@ if (syncButton) {
   });
   pollSync();
 }
+
+const targetDialog = document.querySelector("#targetDialog");
+const targetForm = document.querySelector("[data-target-form]");
+document.querySelectorAll("[data-edit-target]").forEach((button) => {
+  button.addEventListener("click", () => {
+    targetForm.elements.employee_key.value = button.dataset.employeeKey;
+    targetForm.elements.period.value = button.dataset.period;
+    targetForm.elements.period_start.value = button.dataset.periodStart;
+    targetForm.elements.target_amount.value = button.dataset.target;
+    targetDialog.querySelector("[data-target-employee]").textContent = button.dataset.employeeName;
+    targetDialog.querySelector("[data-target-period]").textContent = button.dataset.periodLabel;
+    targetDialog.querySelector("[data-target-message]").textContent = "";
+    targetDialog.showModal();
+    targetForm.elements.target_amount.focus();
+    targetForm.elements.target_amount.select();
+  });
+});
+document.querySelectorAll("[data-close-target]").forEach((button) => button.addEventListener("click", () => targetDialog?.close()));
+targetForm?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const submit = targetForm.querySelector("button[type='submit']");
+  const message = targetForm.querySelector("[data-target-message]");
+  submit.disabled = true;
+  message.textContent = "Saving…";
+  try {
+    const payload = Object.fromEntries(new FormData(targetForm));
+    const response = await fetch("/api/shopify/targets", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRF-Token": targetForm.dataset.csrf},
+      body: JSON.stringify(payload),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Target could not be saved");
+    message.textContent = "Target saved";
+    window.setTimeout(() => window.location.reload(), 450);
+  } catch (error) {
+    message.textContent = error.message || "Target could not be saved";
+    submit.disabled = false;
+  }
+});

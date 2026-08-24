@@ -26,7 +26,6 @@
     {% for key, source in sources.items() %}
     <a class="connection-row" href="{{ url_for(key) }}"><span class="source-icon {{ key }}">{{ source.name[0] }}</span><span class="connection-copy"><strong>{{ source.name }}</strong><small>{{ source.reports|length }} reports</small></span><span class="status {{ connector_status(key) }}"><i></i>{{ 'Configured' if connector_status(key) == 'configured' else 'Setup needed' }}</span></a>
     {% endfor %}
-    <div class="connection-row disabled-row"><span class="source-icon future">O</span><span class="connection-copy"><strong>Ozonetel</strong><small>Planned for later</small></span><span class="status later">Later</span></div>
   </aside>
 </section>
 <section class="panel report-panel">

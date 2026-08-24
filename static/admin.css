@@ -1,0 +1,39 @@
+.edit-access-button {
+  background: #f8faf7;
+  border: 1px solid #c9d7ce;
+  border-radius: 8px;
+  color: var(--forest);
+  cursor: pointer;
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 800;
+  list-style: none;
+  padding: 7px 10px;
+}
+
+.edit-access-button::-webkit-details-marker {
+  display: none;
+}
+
+.edit-access-button:hover {
+  background: #edf4ed;
+}
+
+.inline-field {
+  color: var(--muted);
+  display: block;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.compact-permissions > strong {
+  color: var(--ink);
+  display: block;
+  font-size: 9px;
+  margin: 10px 0 6px;
+}
+
+.compact-permissions > strong small {
+  color: var(--muted);
+  font-weight: 500;
+}
