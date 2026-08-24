@@ -24,7 +24,7 @@ from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, target_template
-from attendance_service import attendance_month, attendance_period, set_attendance
+from attendance_service import attendance_month, attendance_period, set_attendance, set_leave_balance
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
 
@@ -542,6 +542,21 @@ def update_attendance():
             body.get("attendance_date") or "",
             body.get("status_code") or "",
             session["user"]["email"],
+        )
+        return jsonify({"success": True, **result})
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/attendance/balance", methods=["POST"])
+@admin_required
+def update_attendance_balance():
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        result = set_leave_balance(
+            (body.get("employee_key") or "").strip(), body.get("pl_balance"),
+            body.get("sl_balance"), session["user"]["email"],
         )
         return jsonify({"success": True, **result})
     except (TypeError, ValueError) as exc:

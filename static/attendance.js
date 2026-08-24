@@ -41,3 +41,31 @@ document.querySelectorAll('.attendance-status-select').forEach((select) => {
     }
   });
 });
+
+document.querySelectorAll('.leave-balance-input').forEach((input) => {
+  input.dataset.original = input.value;
+  input.addEventListener('change', async () => {
+    const employeeKey = input.dataset.employeeKey;
+    const rowInputs = [...document.querySelectorAll(`.leave-balance-input[data-employee-key="${employeeKey}"]`)];
+    const pl = rowInputs.find((item) => item.dataset.balanceKind === 'pl');
+    const sl = rowInputs.find((item) => item.dataset.balanceKind === 'sl');
+    rowInputs.forEach((item) => { item.disabled = true; item.classList.add('saving'); });
+    try {
+      const response = await fetch('/api/attendance/balance', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': attendanceCsrf},
+        body: JSON.stringify({employee_key: employeeKey, pl_balance: pl.value, sl_balance: sl.value}),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Leave balance update failed');
+      pl.value = result.pl_balance; sl.value = result.sl_balance;
+      rowInputs.forEach((item) => { item.dataset.original = item.value; });
+      attendanceToast('PL and SL balances updated');
+    } catch (error) {
+      rowInputs.forEach((item) => { item.value = item.dataset.original; });
+      attendanceToast(error.message || 'Leave balance update failed', true);
+    } finally {
+      rowInputs.forEach((item) => { item.disabled = false; item.classList.remove('saving'); });
+    }
+  });
+});

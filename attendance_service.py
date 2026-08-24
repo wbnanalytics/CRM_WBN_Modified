@@ -109,6 +109,28 @@ def set_attendance(employee, attendance_date, status_code, updated_by):
     return {"employee_key": employee, "attendance_date": attendance_date, "status_code": status_code, "updated_at": now}
 
 
+def set_leave_balance(employee, pl_balance, sl_balance, updated_by):
+    def clean(value, label):
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"{label} balance must be a number") from exc
+        if number < 0 or number > 365:
+            raise ValueError(f"{label} balance must be between 0 and 365")
+        return str(int(number)) if number.is_integer() else str(round(number, 2))
+    pl, sl = clean(pl_balance, "PL"), clean(sl_balance, "SL")
+    now = utc_now()
+    with db_connection() as db:
+        updated = db.execute(
+            """UPDATE attendance_employees SET pl_balance=?, sl_balance=?, updated_at=?
+               WHERE employee_key=?""", (pl, sl, now, employee),
+        ).rowcount
+        if not updated:
+            raise ValueError("Employee not found")
+    return {"employee_key": employee, "pl_balance": pl, "sl_balance": sl,
+            "updated_by": updated_by, "updated_at": now}
+
+
 def attendance_month(anchor, today=None):
     today = today or date.today()
     start = date(anchor.year, anchor.month, 1)
@@ -128,7 +150,10 @@ def attendance_month(anchor, today=None):
             (start.isoformat(), end.isoformat()),
         ).fetchall()
         updated = db.execute(
-            """SELECT MAX(updated_at) AS updated_at FROM attendance_records"""
+            """SELECT MAX(updated_at) AS updated_at FROM (
+                 SELECT updated_at FROM attendance_records
+                 UNION ALL SELECT updated_at FROM attendance_employees
+               )"""
         ).fetchone()["updated_at"]
     records = {(row["employee_key"], row["attendance_date"]): dict(row) for row in record_rows}
     employees = []

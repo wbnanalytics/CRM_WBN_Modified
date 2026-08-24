@@ -30,8 +30,7 @@
         <td class="sticky-col sticky-name"><strong>{{ employee.employee_name }}</strong></td>
         <td class="sticky-col sticky-role">{{ employee.role }}</td>
         <td class="sticky-col sticky-state"><span class="status-pill {{ 'active' if employee.active else 'inactive' }}">{{ employee.employment_status }}</span></td>
-        <td class="sticky-col sticky-pl">{{ employee.pl_balance if employee.pl_balance is not none else '—' }}</td>
-        <td class="sticky-col sticky-sl">{{ employee.sl_balance if employee.sl_balance is not none else '—' }}</td>
+        {% if is_admin %}<td class="sticky-col sticky-pl"><input class="leave-balance-input" type="number" min="0" max="365" step="0.25" value="{{ employee.pl_balance or 0 }}" data-balance-kind="pl" data-employee-key="{{ employee.employee_key }}" aria-label="{{ employee.employee_name }} PL balance"></td><td class="sticky-col sticky-sl"><input class="leave-balance-input" type="number" min="0" max="365" step="0.25" value="{{ employee.sl_balance or 0 }}" data-balance-kind="sl" data-employee-key="{{ employee.employee_key }}" aria-label="{{ employee.employee_name }} SL balance"></td>{% else %}<td class="sticky-col sticky-pl">{{ employee.pl_balance if employee.pl_balance is not none else '—' }}</td><td class="sticky-col sticky-sl">{{ employee.sl_balance if employee.sl_balance is not none else '—' }}</td>{% endif %}
         {% for item in employee.days %}<td class="attendance-day {{ 'today-column' if item.date == today.isoformat() }} {{ 'future-day' if item.date > today.isoformat() }}" data-attendance-cell>
           {% if is_admin and item.date <= today.isoformat() %}
           <select class="attendance-status-select status-{{ (item.code or 'blank')|lower|replace(' ', '-') }}" data-employee-key="{{ employee.employee_key }}" data-attendance-date="{{ item.date }}" data-original="{{ item.code }}" aria-label="{{ employee.employee_name }} attendance on {{ item.date }}">
