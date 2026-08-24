@@ -25,8 +25,8 @@ from scorecard_mailer import email_ready as scorecard_email_ready, send_record_e
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, target_template
 from attendance_service import attendance_month, attendance_period, set_attendance
-from cs_dashboard_service import cs_dashboard
-from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel
+from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
+from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
 
 
 load_dotenv()
@@ -426,6 +426,36 @@ def download_cs_dashboard():
         download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+@app.route("/dashboard/cs/details")
+@permission_required("dashboard")
+def cs_dashboard_details():
+    selection = selected_reporting_period("daily")
+    channel = request.args.get("channel", "all")
+    metric = request.args.get("metric", "total")
+    allowed_channels = {"all", "email", "inbound", "chats", "orm"}
+    allowed_metrics = {"total", "resolved", "open", "escalated", "spam", "genuine", "untagged",
+                       "working_hours", "outside_hours", "reply_10_12", "bot_handled", "bot_resolved",
+                       "human_handover", "instagram_dm", "instagram_comment", "facebook_dm", "facebook_comment"}
+    if channel not in allowed_channels or metric not in allowed_metrics:
+        abort(400)
+    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric)
+    return render_template("cs_details.html", active_page="dashboard", page_title="CS underlying data",
+                           selection=selection, channel=channel, metric=metric, rows=rows)
+
+
+@app.route("/dashboard/cs/details.xlsx")
+@permission_required("dashboard")
+def download_cs_details():
+    selection = selected_reporting_period("daily")
+    channel = request.args.get("channel", "all")
+    metric = request.args.get("metric", "total")
+    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric)
+    return send_file(cs_detail_excel(rows, f"{channel.title()} — {metric.replace('_', ' ').title()}"),
+                     as_attachment=True,
+                     download_name=f"cs-underlying-{channel}-{metric}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @app.route("/dashboard/attendance.xlsx")

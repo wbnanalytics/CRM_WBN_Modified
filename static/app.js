@@ -72,3 +72,8 @@ if (syncButton) {
   });
   pollSync(false);
 }
+
+document.querySelectorAll("[data-cs-tab]").forEach((button) => button.addEventListener("click", () => {
+  document.querySelectorAll("[data-cs-tab]").forEach((item) => item.classList.toggle("active", item === button));
+  document.querySelectorAll("[data-cs-panel]").forEach((panel) => panel.classList.toggle("active", panel.dataset.csPanel === button.dataset.csTab));
+}));
