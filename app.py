@@ -199,7 +199,6 @@ def require_production_login():
         if signed_in_at < cutoff:
             session.clear()
             if request.endpoint not in public:
-                flash("Your daily session ended at 4:00 AM IST. Please sign in again.", "success")
                 return redirect(url_for("index"))
     if os.getenv("APP_ENV") == "production" and request.endpoint not in public and not session.get("user"):
         return redirect(url_for("index"))
