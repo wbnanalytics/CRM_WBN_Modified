@@ -103,6 +103,27 @@
 </section>
 
 {% if week_end_report %}
+{% if week_end_report.growth.points|length > 1 %}
+<section class="panel sales-growth-panel week-end-growth-panel" aria-label="Week End sales growth trend">
+  <div class="panel-head growth-panel-head">
+    <div><span class="eyebrow">WEEK END GROWTH</span><h2>Week-ending managed-team sales</h2><p class="panel-description">Saturday–Friday performance across the selected month.</p></div>
+    {% if week_end_report.growth.change is not none %}<span class="growth-change {{ 'positive' if week_end_report.growth.change >= 0 else 'negative' }}">{{ '↗' if week_end_report.growth.change >= 0 else '↘' }} {{ (week_end_report.growth.change|abs * 100)|round(1) }}% vs previous week</span>{% endif %}
+  </div>
+  <div class="growth-chart-shell">
+    <div class="growth-plot">
+      <svg class="growth-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Week End sales growth from {{ week_end_report.growth.points[0].label }} to {{ week_end_report.growth.points[-1].label }}">
+        <defs><linearGradient id="weekEndGrowthArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#c5df63" stop-opacity=".32"/><stop offset="100%" stop-color="#4f9f7b" stop-opacity="0"/></linearGradient></defs>
+        <line x1="4" y1="92" x2="96" y2="92" class="growth-grid-line"/><line x1="4" y1="54" x2="96" y2="54" class="growth-grid-line"/><line x1="4" y1="16" x2="96" y2="16" class="growth-grid-line"/>
+        <polygon points="4,92 {{ week_end_report.growth.polyline }} 96,92" fill="url(#weekEndGrowthArea)"/>
+        <polyline points="{{ week_end_report.growth.polyline }}" class="growth-line"/>
+      </svg>
+      {% for point in week_end_report.growth.points %}<button type="button" class="growth-point" style="--point-x:{{ point.x }}%;--point-y:{{ point.y }}%" aria-label="{{ point.label }} sales {{ point.value|inr }}"><span class="growth-tooltip"><b>{{ point.label }}</b><strong>{{ point.value|inr }}</strong>{% if point.change is not none %}<small class="{{ 'positive' if point.change >= 0 else 'negative' }}">{{ '▲' if point.change >= 0 else '▼' }} {{ (point.change|abs * 100)|round(1) }}% vs prior week</small>{% endif %}</span></button>{% endfor %}
+    </div>
+    <div class="growth-axis">{% for point in week_end_report.growth.points %}<span>{{ point.label }}</span>{% endfor %}</div>
+  </div>
+  <div class="growth-summary"><span>Previous <strong>{{ week_end_report.growth.previous|inr }}</strong></span><span>Latest <strong>{{ week_end_report.growth.current|inr }}</strong></span></div>
+</section>
+{% endif %}
 <section class="panel sales-report-panel week-end-report-panel">
   <div class="panel-head">
     <div><span class="eyebrow">WEEK END REPORT</span><h2>Saturday–Friday sales summary</h2><p class="panel-description">Each column contains one complete business week, labelled by its Friday ending date.</p></div>

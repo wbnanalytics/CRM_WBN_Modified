@@ -546,8 +546,8 @@ def shopify():
     selected_agent = request.args.get("agent", "").strip()
     report = shopify_sales_report(period, anchor, selected_agent)
     week_end_report = None
-    if period == "yearly":
-        week_end_report = shopify_sales_report("weekly_year", anchor, selected_agent)
+    if period == "monthly":
+        week_end_report = shopify_sales_report("weekly_month", anchor, selected_agent)
     iso = anchor.isocalendar()
     return render_template(
         "shopify.html", active_page="shopify", page_title="Shopify Sales",
@@ -642,10 +642,10 @@ def download_shopify_performance():
 def download_shopify_week_end():
     selection = selected_reporting_period("monthly")
     source_period, anchor = selection["period"], selection["anchor"]
-    if source_period != "yearly":
+    if source_period != "monthly":
         abort(404)
-    report = shopify_sales_report("weekly_year", anchor, request.args.get("agent", "").strip())
-    label = str(anchor.year)
+    report = shopify_sales_report("weekly_month", anchor, request.args.get("agent", "").strip())
+    label = anchor.strftime("%Y-%m")
     return send_file(
         performance_excel(report), as_attachment=True,
         download_name=f"shopify-week-end-report-{label}.xlsx",

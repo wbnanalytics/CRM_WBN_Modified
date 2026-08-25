@@ -258,6 +258,21 @@ def _period_columns(period, anchor):
             })
             cursor += timedelta(days=1)
         default_target_divisor = 7
+    elif period == "weekly_month":
+        month_start = date(anchor.year, anchor.month, 1)
+        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
+        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
+        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+        columns = []
+        week_end = first_friday
+        while week_end <= last_friday:
+            columns.append({
+                "key": week_end.isoformat(), "label": f"WE {week_end.strftime('%d %b').upper()}",
+                "start": week_end - timedelta(days=6), "end": week_end,
+            })
+            week_end += timedelta(days=7)
+        start, end = columns[0]["start"], columns[-1]["end"]
+        default_target_divisor = 1
     elif period == "weekly_year":
         year_start, year_end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
         first_friday = year_start + timedelta(days=(4 - year_start.weekday()) % 7)
@@ -319,7 +334,7 @@ def sales_report(period="daily", anchor=None, employee_key=""):
     period, start, end, columns, target_divisor = _period_columns(period, anchor)
     sales = shopify_sales_between(start.isoformat(), end.isoformat())
     product_sales = shopify_product_sales_between(start.isoformat(), end.isoformat())
-    target_period = "weekly" if period in {"dashboard", "weekly", "weekly_year"} else ("monthly" if period == "yearly" else period)
+    target_period = "weekly" if period in {"dashboard", "weekly", "weekly_month", "weekly_year"} else ("monthly" if period == "yearly" else period)
     target_start = date(anchor.year, 1 if period in {"yearly", "weekly_year"} else anchor.month, 1)
     target_end = end if period in {"yearly", "weekly_year"} else target_start
     override_rows = shopify_targets_between(target_period, target_start.isoformat(), target_end.isoformat())
@@ -371,7 +386,7 @@ def sales_report(period="daily", anchor=None, employee_key=""):
                 weekly_target,
             )
             targets = [weekly_total_target / len(columns) for _ in columns]
-        elif period == "weekly_year":
+        elif period in {"weekly_month", "weekly_year"}:
             targets = [overrides.get(
                 (employee["employee_key"], date(column["end"].year, column["end"].month, 1).isoformat()),
                 period_target,
