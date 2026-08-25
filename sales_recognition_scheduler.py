@@ -19,12 +19,14 @@ from shopify_service import sales_report
 
 
 IST = ZoneInfo("Asia/Kolkata")
-FIXED_CC = [
-    "varun.c@wellbeingnutrition.com",
+ALWAYS_TO = [
     "soumik@wellbeingnutrition.com",
     "khushbu.nishad@wellbeingnutrition.com",
     "ashutosh@wellbeingnutrition.com",
-    "ahanti.v@wellbeingnutrition.com",
+]
+FIXED_CC = [
+    "varun.c@wellbeingnutrition.com",
+    "alcantro@wellbeingnutrition.com",
 ]
 
 
@@ -87,12 +89,20 @@ def _record_sent(event_key, email_type, period_label, recipients):
         )
 
 
-def _send_once(event_key, email_type, period_label, subject, body, recipients):
-    recipients = list(dict.fromkeys(address.lower() for address in recipients if address))
+def _send_once(event_key, email_type, period_label, subject, body, _event_recipients):
+    # Recognition messages always go to the CRM leadership group.  Every active
+    # member of the Shopify/CRM roster is copied dynamically, so newly-added
+    # team members are included without changing this scheduler.
+    team_cc = list(_email_directory().values())
+    recipients = list(dict.fromkeys(address.lower() for address in ALWAYS_TO if address))
     if not recipients or _already_sent(event_key):
         return False
     recipient_set = set(recipients)
-    cc = [address for address in FIXED_CC if address.lower() not in recipient_set]
+    cc = list(dict.fromkeys(
+        address.lower()
+        for address in [*FIXED_CC, *team_cc]
+        if address and address.lower() not in recipient_set
+    ))
     send_html_email(
         subject, body, html.unescape(subject), recipients, cc=cc,
         inline_images={"wbn-logo": _logo_path()},
