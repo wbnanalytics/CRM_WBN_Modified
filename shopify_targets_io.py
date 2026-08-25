@@ -113,9 +113,14 @@ def performance_excel(report, product_field="all", product_query=""):
         else:
             product_rows = [item for item in product_rows if query in " ".join(str(item.get(key) or "").lower() for key in fields.values())]
     for item in product_rows:
+        orders = item.get("orders", 0) or 0
+        total = item.get("total", 0) or 0
+        average_order_value = item.get("average_order_value")
+        if average_order_value is None:
+            average_order_value = total / orders if orders else 0
         product_sheet.append([
             item["display_name"], item["role"], item["product_title"], item["product_sku"],
-            item.get("quantity", 0), item["total"], item["orders"], item["average_order_value"],
+            item.get("quantity", 0), total, orders, average_order_value,
         ])
     product_sheet.freeze_panes = "A2"
     product_sheet.auto_filter.ref = product_sheet.dimensions
@@ -129,9 +134,14 @@ def performance_excel(report, product_field="all", product_query=""):
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
     for rank, item in enumerate(report.get("team_product_rows", []), start=1):
+        orders = item.get("orders", 0) or 0
+        total = item.get("total", 0) or 0
+        average_order_value = item.get("average_order_value")
+        if average_order_value is None:
+            average_order_value = total / orders if orders else 0
         team_product_sheet.append([
             rank, item["product_title"], item["product_sku"], item.get("quantity", 0),
-            item["total"], item["orders"], item["average_order_value"],
+            total, orders, average_order_value,
         ])
     team_product_sheet.freeze_panes = "A2"
     team_product_sheet.auto_filter.ref = team_product_sheet.dimensions

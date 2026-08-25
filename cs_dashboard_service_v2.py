@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 from database import db_connection
 
 IST = ZoneInfo("Asia/Kolkata")
-SPAM_SUBCATEGORIES = {"spam / invalid / irrelevant", "brand/marketing related", "other"}
+SPAM_SUBCATEGORIES = {"spam / invalid / irrelevant"}
 RESOLVED = {"CLOSED", "BULK_CLOSED", "AUTO_CLOSED", "BULK_AUTO_CLOSED"}
 SPAM = {"BULK_CLOSED_AS_SPAM", "CLOSED_AS_SPAM", "CLOSE AS SPAM"}
 ESCALATED = {"WAITING_ON_CUSTOMER", "BULK_WAITING_ON_CUSTOMER", "ESCALATED", "BULK_ESCALATED"}
@@ -18,10 +18,10 @@ ALIASES = {
     # BIK exports both brand inbox identities in the Agent name column. They
     # are non-human account identities, but the export does not prove that
     # every interaction was automated, so keep one accurate system category.
-    "wellbeing nutrition": "BIK System Account",
-    "wellbeing nutrition_main": "BIK System Account",
+    "wellbeing nutrition": "BIK System / Bot",
+    "wellbeing nutrition_main": "BIK System / Bot",
 }
-SYSTEM_AGENTS = {"unassigned", "bot", "bik system account"}
+SYSTEM_AGENTS = {"unassigned", "bot", "bik system / bot"}
 
 
 def tagged_general(raw):
@@ -165,10 +165,16 @@ def cs_dashboard(start_date, end_date, selected_agent=None):
             target["genuine"] += int(not is_spam)
             target["agent_replies"] += int(row["agent_messages"] or 0)
         if key == "chats":
-            system = name.lower() in SYSTEM_AGENTS
-            overall[key]["bot_handled"] += int(system)
-            overall[key]["bot_resolved"] += int(system and is_resolved)
-            overall[key]["human_handover"] += int(not system)
+            # Assignment to a BIK inbox identity is not proof of automation.
+            # Count human handling only when the export contains human-response
+            # or agent-message evidence; otherwise retain a neutral system/bot bucket.
+            human_evidence = int(row["agent_messages"] or 0) > 0 or (
+                row["human_response_seconds"] is not None and row["human_response_seconds"] >= 0
+            )
+            bot_only = not human_evidence
+            overall[key]["bot_handled"] += int(bot_only)
+            overall[key]["bot_resolved"] += int(bot_only and is_resolved)
+            overall[key]["human_handover"] += int(human_evidence)
         else:
             message_type = str(raw.get("Type of Message") or "").lower()
             comment = "comment" in message_type
@@ -257,7 +263,10 @@ def cs_detail_rows(start_date, end_date, channel_key="all", metric="total", agen
         resolved, escalated = stage in RESOLVED or spam, stage in ESCALATED
         name = agent_name(row["agent_name"])
         message_type = str(raw.get("Type of Message") or "")
-        system = name.lower() in SYSTEM_AGENTS
+        human_evidence = int(row["agent_messages"] or 0) > 0 or (
+            row["human_response_seconds"] is not None and row["human_response_seconds"] >= 0
+        )
+        system = not human_evidence
         comment = "comment" in message_type.lower()
         flags = {"total": True, "resolved": resolved, "open": not resolved, "escalated": escalated,
                  "spam": spam, "genuine": not spam, "bot_handled": system,

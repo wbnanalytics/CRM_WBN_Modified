@@ -26,6 +26,23 @@ document.querySelectorAll("[data-date-filter]").forEach((form) => {
   });
 });
 
+const announcementDialog = document.querySelector("[data-announcement-dialog]");
+const closeAnnouncementDialog = () => {
+  if (!announcementDialog) return;
+  if (typeof announcementDialog.close === "function") announcementDialog.close();
+  else announcementDialog.removeAttribute("open");
+};
+document.querySelector("[data-announcement-open]")?.addEventListener("click", () => {
+  if (!announcementDialog) return;
+  if (typeof announcementDialog.showModal === "function") announcementDialog.showModal();
+  else announcementDialog.setAttribute("open", "");
+  announcementDialog.querySelector("textarea")?.focus();
+});
+announcementDialog?.querySelectorAll("[data-announcement-close]").forEach((button) => button.addEventListener("click", closeAnnouncementDialog));
+announcementDialog?.addEventListener("click", (event) => {
+  if (event.target === announcementDialog) closeAnnouncementDialog();
+});
+
 const syncButton = document.querySelector("[data-sync-all]");
 const syncMessage = document.querySelector("[data-sync-message]");
 if (syncButton) {

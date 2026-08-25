@@ -16,8 +16,8 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css') }}">
-  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260825-2') }}">
+  <script src="{{ url_for('static', filename='app.js', v='20260825-2') }}" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -46,11 +46,28 @@
     <main class="main-content">
       <header class="mobile-header"><button id="menuButton" aria-label="Open navigation">☰</button><span class="mini-logo">WBN</span></header>
       <div class="refresh-ticker" aria-label="Data refresh status">
-        <span class="ticker-live"><i></i><strong data-ist-clock>IST</strong></span>
-        <div class="ticker-track">
-          {% for item in refresh_ticker['items'] %}<span class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{ item.completed_at|ist_datetime }}</time>{% endif %}</span>{% endfor %}
+        <span class="ticker-live"><i></i><small>LIVE DATA</small><strong data-ist-clock>IST</strong></span>
+        <div class="ticker-window">
+          <div class="ticker-track">
+            {% for repeat in range(2) %}{% for item in refresh_ticker['items'] %}<span class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ 'Updated' if item.status == 'success' else item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{ item.completed_at|ist_datetime }}</time>{% endif %}<small>Auto: {{ item.schedule }}</small></span>{% endfor %}{% endfor %}
+          </div>
         </div>
+        {% if is_admin %}<button class="announcement-trigger" type="button" data-announcement-open aria-haspopup="dialog">Announcement</button>
+        <dialog class="announcement-dialog" data-announcement-dialog aria-labelledby="announcement-dialog-title">
+          <div class="announcement-popover">
+            <button class="announcement-close" type="button" data-announcement-close aria-label="Close announcement editor">&times;</button>
+            <strong id="announcement-dialog-title">Broadcast announcement</strong>
+            <p>Visible to every signed-in portal user until you clear it.</p>
+            <form method="post" action="{{ url_for('update_announcement_ticker') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
+              <textarea name="message" maxlength="500" rows="4" placeholder="Type an announcement…">{{ announcement_ticker }}</textarea>
+              <div><button class="outline-button" type="button" data-announcement-close>Cancel</button><button class="danger-button" type="submit" name="action" value="clear">Clear</button><button class="primary-button" type="submit" name="action" value="save">Save &amp; broadcast</button></div>
+            </form>
+          </div>
+        </dialog>{% endif %}
       </div>
+      {% if announcement_ticker %}<div class="broadcast-ticker" role="status" aria-label="Portal announcement"><span class="broadcast-label">ANNOUNCEMENT</span><div class="broadcast-window"><div class="broadcast-track"><span>{{ announcement_ticker }}</span><span aria-hidden="true">{{ announcement_ticker }}</span></div></div></div>{% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}
       {% block content %}{% endblock %}
     </main>

@@ -50,12 +50,29 @@ def ensure_agent_portal_access(agent, actor="scorecard-sync"):
     if email == PRIMARY_ADMIN_EMAIL:
         return False
     existing = get_portal_user(email)
-    # Never downgrade an admin or overwrite access that an admin has already
-    # configured. Automatic enrollment is only for agents missing from the
-    # portal directory.
+    department = (agent.get("department") or "").casefold()
+    if "nutrition" in department:
+        business_role = "Nutritionist"
+    elif "sales" in department:
+        business_role = "Sales"
+    elif "admin" in department:
+        business_role = "Unassigned"
+    else:
+        business_role = "CS"
+    # Preserve security roles and any business-team choice already configured
+    # by an administrator. Only fill a missing roster classification.
     if existing:
+        if existing.get("role") == "user" and (existing.get("business_role") or "Unassigned") == "Unassigned":
+            save_portal_user(
+                email, existing.get("display_name") or agent.get("name") or email.split("@", 1)[0],
+                "user", bool(existing.get("active")), actor, business_role=business_role,
+            )
+            return True
         return False
-    save_portal_user(email, agent.get("name") or email.split("@", 1)[0], "user", True, actor)
+    save_portal_user(
+        email, agent.get("name") or email.split("@", 1)[0], "user", True, actor,
+        business_role=business_role,
+    )
     set_portal_permissions(email, ["dashboard", "shopify.view"], actor)
     return True
 

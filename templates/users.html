@@ -13,6 +13,7 @@
         <label>Work email<input type="email" name="email" placeholder="name@wellbeingnutrition.com" pattern=".+@wellbeingnutrition\.com" required></label>
         <label>Display name<input type="text" name="display_name" placeholder="Full name"></label>
         <label>Access level<select name="role"><option value="user">User</option><option value="admin">Admin</option></select></label>
+        <label>Business team<select name="business_role">{% for business_role in business_roles %}<option value="{{ business_role }}">{{ business_role }}</option>{% endfor %}</select></label>
         <fieldset class="permission-fieldset" data-permission-group><legend>Module &amp; submodule access</legend><div class="permission-bulk"><button type="button" data-permission-toggle="all">Select all</button><button type="button" data-permission-toggle="none">Clear all</button></div>{% for key, label, description in permission_options %}<label class="permission-check"><input type="checkbox" name="permissions" value="{{ key }}"><span><strong>{{ label }}</strong><small>{{ description }}</small></span></label>{% endfor %}</fieldset>
         <button class="primary-button" type="submit">Save access</button>
       </form>
@@ -20,14 +21,16 @@
 
     <section class="content-card user-list-card">
       <div class="card-title-row"><div><span class="eyebrow">PORTAL ACCESS</span><h2>{{ users|length }} accounts</h2></div></div>
-      <div class="user-table-wrap"><table class="user-table"><thead><tr><th>Person</th><th>Role</th><th>Status</th><th>Action</th></tr></thead><tbody>
+      <div class="user-table-wrap"><table class="user-table"><thead><tr><th>Person</th><th>Access</th><th>Business team</th><th>Status</th><th>Action</th></tr></thead><tbody>
       {% for user in users %}<tr>
         <td><strong>{{ user.display_name or user.email.split('@')[0] }}</strong><span>{{ user.email }}</span>{% if user.email == primary_admin %}<small>Primary admin</small>{% endif %}</td>
         <td><span class="role-pill {{ user.role }}">{{ user.role|title }}</span></td>
+        <td><span class="business-role-pill">{{ user.business_role or 'Unassigned' }}</span></td>
         <td><span class="status-pill {{ 'active' if user.active else 'inactive' }}">{{ 'Active' if user.active else 'Inactive' }}</span></td>
         <td>{% if user.email == primary_admin %}<span class="locked-label">Protected</span>{% else %}<details class="access-editor"><summary class="edit-access-button">Edit access</summary><form method="post" action="{{ url_for('update_user') }}" class="inline-user-form">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="email" value="{{ user.email }}">
           <label class="inline-field">Access level<select name="role" aria-label="Role for {{ user.email }}"><option value="user" {{ 'selected' if user.role == 'user' }}>User</option><option value="admin" {{ 'selected' if user.role == 'admin' }}>Admin</option></select></label>
+          <label class="inline-field">Business team<select name="business_role" aria-label="Business team for {{ user.email }}">{% for business_role in business_roles %}<option value="{{ business_role }}" {{ 'selected' if business_role == (user.business_role or 'Unassigned') }}>{{ business_role }}</option>{% endfor %}</select></label>
           <div class="compact-permissions" data-permission-group><strong>Module access <small>(applies to users)</small></strong><div class="permission-bulk"><button type="button" data-permission-toggle="all">Select all</button><button type="button" data-permission-toggle="none">Clear all</button></div>{% for key, label, description in permission_options %}<label><input type="checkbox" name="permissions" value="{{ key }}" {{ 'checked' if key in user.permissions }}>{{ label }}</label>{% endfor %}</div>
           <label class="active-toggle"><input type="checkbox" name="active" value="1" {{ 'checked' if user.active }}>Account active</label><button type="submit" class="table-action">Save changes</button>
         </form></details>{% endif %}</td>

@@ -151,6 +151,8 @@ def init_db():
                 employee_key TEXT NOT NULL,
                 source_employee_name TEXT NOT NULL,
                 total_sales REAL NOT NULL DEFAULT 0,
+                gross_sales REAL NOT NULL DEFAULT 0,
+                discounts REAL NOT NULL DEFAULT 0,
                 order_count INTEGER NOT NULL DEFAULT 0,
                 synced_at TEXT NOT NULL,
                 PRIMARY KEY (day, employee_key)
@@ -242,6 +244,7 @@ def init_db():
                 email TEXT PRIMARY KEY,
                 display_name TEXT,
                 role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+                business_role TEXT NOT NULL DEFAULT 'Unassigned',
                 active INTEGER NOT NULL DEFAULT 1,
                 created_by TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -424,6 +427,20 @@ def init_db():
             db.execute(
                 "ALTER TABLE shopify_product_sales_daily ADD COLUMN quantity_sold INTEGER NOT NULL DEFAULT 0"
             )
+        sales_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(shopify_sales_daily)").fetchall()
+        }
+        if "gross_sales" not in sales_columns:
+            db.execute("ALTER TABLE shopify_sales_daily ADD COLUMN gross_sales REAL NOT NULL DEFAULT 0")
+        if "discounts" not in sales_columns:
+            db.execute("ALTER TABLE shopify_sales_daily ADD COLUMN discounts REAL NOT NULL DEFAULT 0")
+        portal_user_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(portal_users)").fetchall()
+        }
+        if "business_role" not in portal_user_columns:
+            db.execute(
+                "ALTER TABLE portal_users ADD COLUMN business_role TEXT NOT NULL DEFAULT 'Unassigned'"
+            )
         now = utc_now()
         db.execute(
             """INSERT INTO portal_users
@@ -473,7 +490,7 @@ def get_portal_user(email):
         return None
     with db_connection() as db:
         row = db.execute(
-            "SELECT email, display_name, role, active, created_by, created_at, updated_at FROM portal_users WHERE email=?",
+            "SELECT email, display_name, role, business_role, active, created_by, created_at, updated_at FROM portal_users WHERE email=?",
             (normalized,),
         ).fetchone()
     return dict(row) if row else None
@@ -482,29 +499,53 @@ def get_portal_user(email):
 def list_portal_users():
     with db_connection() as db:
         rows = db.execute(
-            """SELECT email, display_name, role, active, created_by, created_at, updated_at
+            """SELECT email, display_name, role, business_role, active, created_by, created_at, updated_at
                FROM portal_users ORDER BY CASE WHEN email=? THEN 0 ELSE 1 END, role, email""",
             (PRIMARY_ADMIN_EMAIL,),
         ).fetchall()
     return [dict(row) for row in rows]
 
 
-def save_portal_user(email, display_name, role, active, created_by):
+def get_setting(key, default=""):
+    with db_connection() as db:
+        row = db.execute("SELECT value FROM schema_meta WHERE key=?", ((key or "").strip(),)).fetchone()
+    return row["value"] if row else default
+
+
+def set_setting(key, value):
+    setting_key = (key or "").strip()
+    if not setting_key:
+        raise ValueError("Setting key is required")
+    with db_connection() as db:
+        db.execute(
+            """INSERT INTO schema_meta (key, value) VALUES (?, ?)
+               ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+            (setting_key, str(value or "")),
+        )
+
+
+def save_portal_user(email, display_name, role, active, created_by, business_role="Unassigned"):
     normalized = (email or "").strip().lower()
     if normalized == PRIMARY_ADMIN_EMAIL:
         role, active = "admin", True
     if role not in {"admin", "user"}:
         raise ValueError("Invalid portal role")
+    allowed_business_roles = {"CS", "Sales", "Nutritionist", "CRM Admin", "Other", "Unassigned"}
+    business_role = (business_role or "Unassigned").strip()
+    if business_role not in allowed_business_roles:
+        raise ValueError("Invalid business team")
     now = utc_now()
     with db_connection() as db:
         db.execute(
             """INSERT INTO portal_users
-               (email, display_name, role, active, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)
+               (email, display_name, role, business_role, active, created_by, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(email) DO UPDATE SET
                  display_name=excluded.display_name, role=excluded.role,
-                 active=excluded.active, updated_at=excluded.updated_at""",
-            (normalized, (display_name or "").strip(), role, int(bool(active)), created_by, now, now),
+                 business_role=excluded.business_role, active=excluded.active,
+                 updated_at=excluded.updated_at""",
+            (normalized, (display_name or "").strip(), role, business_role,
+             int(bool(active)), created_by, now, now),
         )
     return get_portal_user(normalized)
 
@@ -726,17 +767,20 @@ def replace_shopify_sales(start_date, end_date, rows):
         )
         db.executemany(
             """INSERT INTO shopify_sales_daily
-               (day, employee_key, source_employee_name, total_sales, order_count, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?)
+               (day, employee_key, source_employee_name, total_sales, gross_sales, discounts, order_count, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(day, employee_key) DO UPDATE SET
                  source_employee_name=excluded.source_employee_name,
                  total_sales=excluded.total_sales,
+                 gross_sales=excluded.gross_sales,
+                 discounts=excluded.discounts,
                  order_count=excluded.order_count,
                  synced_at=excluded.synced_at""",
             [
                 (
                     row["day"], row["employee_key"], row["source_employee_name"],
-                    float(row["total_sales"]), int(row["order_count"]), now,
+                    float(row["total_sales"]), float(row.get("gross_sales") or 0),
+                    float(row.get("discounts") or 0), int(row["order_count"]), now,
                 )
                 for row in rows
             ],
@@ -789,7 +833,7 @@ def shopify_sales_between(start_date, end_date):
                       COALESCE(c.weekly_target, 0) AS weekly_target,
                       COALESCE(c.include_in_team, 0) AS include_in_team,
                       COALESCE(c.active, 1) AS active,
-                      s.total_sales, s.order_count, s.synced_at
+                      s.total_sales, s.gross_sales, s.discounts, s.order_count, s.synced_at
                FROM shopify_sales_daily s
                LEFT JOIN shopify_employee_config c ON c.employee_key=s.employee_key
                WHERE s.day BETWEEN ? AND ?

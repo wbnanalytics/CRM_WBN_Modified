@@ -166,14 +166,14 @@ def sync_shopify(start_date, end_date):
         token = _access_token()
         for chunk_start, chunk_end in _month_chunks(start, end):
             query = f"""FROM sales
-SHOW total_sales, orders
+SHOW gross_sales, discounts, total_sales, orders
 TIMESERIES day
 GROUP BY staff_member_name
 SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
 ORDER BY day ASC, staff_member_name ASC"""
             source_rows = _shopifyql_all(token, query)
             received += len(source_rows)
-            combined = defaultdict(lambda: {"total_sales": 0.0, "order_count": 0, "source_names": set()})
+            combined = defaultdict(lambda: {"total_sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "order_count": 0, "source_names": set()})
             discovered = {}
             for row in source_rows:
                 source_name = row.get("staff_member_name")
@@ -185,6 +185,8 @@ ORDER BY day ASC, staff_member_name ASC"""
                     continue
                 item = combined[(day, employee_key)]
                 item["total_sales"] += float(row.get("total_sales") or 0)
+                item["gross_sales"] += float(row.get("gross_sales") or 0)
+                item["discounts"] += float(row.get("discounts") or 0)
                 item["order_count"] += int(float(row.get("orders") or 0))
                 item["source_names"].add(str(source_name))
                 discovered[employee_key] = {
@@ -198,7 +200,8 @@ ORDER BY day ASC, staff_member_name ASC"""
                 {
                     "day": day, "employee_key": employee_key,
                     "source_employee_name": " / ".join(sorted(item["source_names"])),
-                    "total_sales": item["total_sales"], "order_count": item["order_count"],
+                    "total_sales": item["total_sales"], "gross_sales": item["gross_sales"],
+                    "discounts": item["discounts"], "order_count": item["order_count"],
                 }
                 for (day, employee_key), item in combined.items()
             ]
@@ -363,24 +366,32 @@ def sales_report(period="daily", anchor=None, employee_key=""):
     selected_employee = next((item for item in available_employees if item["employee_key"] == employee_key), None)
     if selected_employee:
         configs = {employee_key: configs[employee_key]}
-    by_employee_day = defaultdict(lambda: {"sales": 0.0, "orders": 0})
+    by_employee_day = defaultdict(lambda: {"sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "orders": 0})
     for item in sales:
         slot = by_employee_day[(item["employee_key"], item["day"])]
         slot["sales"] += float(item["total_sales"])
+        slot["gross_sales"] += float(item.get("gross_sales") or 0)
+        slot["discounts"] += float(item.get("discounts") or 0)
         slot["orders"] += int(item["order_count"])
     rows = []
     for employee in configs.values():
         values = []
+        gross_values = []
+        discount_values = []
         order_values = []
         for column in columns:
             cursor = column["start"]
-            amount = orders = 0
+            amount = gross_amount = discounts = orders = 0
             while cursor <= column["end"]:
                 item = by_employee_day[(employee["employee_key"], cursor.isoformat())]
                 amount += item["sales"]
+                gross_amount += item["gross_sales"]
+                discounts += item["discounts"]
                 orders += item["orders"]
                 cursor += timedelta(days=1)
             values.append(amount)
+            gross_values.append(gross_amount)
+            discount_values.append(discounts)
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
@@ -406,9 +417,11 @@ def sales_report(period="daily", anchor=None, employee_key=""):
         total_target = sum(targets)
         total = sum(values)
         rows.append({
-            **employee, "values": values, "order_values": order_values,
+            **employee, "values": values, "gross_values": gross_values,
+            "discount_values": discount_values, "order_values": order_values,
             "period_target": period_target, "targets": targets, "total_target": total_target,
             "total": total, "orders": sum(order_values),
+            "gross_sales": sum(gross_values), "discounts": sum(discount_values),
             "average_order_value": total / sum(order_values) if sum(order_values) else 0,
             "attainment": total / total_target if total_target else None,
         })

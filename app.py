@@ -15,9 +15,9 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, bulk_set_shopify_targets,
-    get_portal_permissions, get_portal_user, grant_permission_to_all_users, init_db, latest_sync_request,
+    get_portal_permissions, get_portal_user, get_setting, grant_permission_to_all_users, init_db, latest_sync_request,
     list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
-    save_portal_user, set_portal_permissions, shopify_targets_between, zoho_metrics,
+    save_portal_user, set_portal_permissions, set_setting, shopify_targets_between, zoho_metrics,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
@@ -28,6 +28,7 @@ from shopify_targets_io import performance_excel, read_target_upload, target_tem
 from attendance_service import attendance_month, attendance_period, set_attendance, set_employee_profile, set_leave_balance
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
+from management_dashboard_service import sales_management, cs_management
 
 
 load_dotenv()
@@ -72,6 +73,35 @@ PORTAL_PERMISSIONS = (
 VALID_PERMISSION_KEYS = {item[0] for item in PORTAL_PERMISSIONS}
 scorecards.sync_agents_to_portal_users()
 grant_permission_to_all_users("shopify.view", "system-default")
+
+ATTENDANCE_BUSINESS_ROLES = {
+    **{name.casefold(): "Sales" for name in (
+        "Babita Bagdi", "Kajol Rajput", "Akash Varma", "Eeshika Poojari", "Rachana Rathod",
+        "Shubh Pajwani", "Akshay Shah", "Shahnawaz Ansari", "Ajay Cynthala", "Yusuf Shaikh",
+        "Komal Mohite", "Arnav Purohit",
+    )},
+    **{name.casefold(): "CS" for name in (
+        "Tapasya Dhekane", "Tapasya Dekhane", "Aditya Shinde", "Sampada Nayak", "Muskan Padvekar",
+        "Akil Shaikh", "Spriha Shukla", "Salman Shaikh", "Shubham Kadam", "Purvi Gawade",
+        "Ahanti Vichare", "Atul Aherwar", "Shivanshu Mishra",
+    )},
+    "riddhi shah": "Nutritionist",
+}
+
+
+def sync_attendance_business_roles():
+    """Fill missing business-team roles from the manager-maintained attendance roster."""
+    for portal_user in list_portal_users():
+        current = portal_user.get("business_role") or "Unassigned"
+        mapped = ATTENDANCE_BUSINESS_ROLES.get((portal_user.get("display_name") or "").strip().casefold())
+        if mapped and current == "Unassigned":
+            save_portal_user(
+                portal_user["email"], portal_user.get("display_name"), portal_user["role"],
+                bool(portal_user["active"]), "attendance-roster", business_role=mapped,
+            )
+
+
+sync_attendance_business_roles()
 
 
 REPORT_SOURCES = {
@@ -238,6 +268,11 @@ def can_access_scorecard():
 
 def refresh_ticker_data():
     latest = {}
+    schedules = {
+        "shopify": "Hourly",
+        "zoho": "09:00 / 21:00 IST",
+        "bik": "09:00 / 21:00 IST",
+    }
     for row in recent_sync_runs(100):
         latest.setdefault(row["source"], row)
     items = []
@@ -247,6 +282,7 @@ def refresh_ticker_data():
             "key": key, "label": label,
             "status": row["status"] if row else "pending",
             "completed_at": row["completed_at"] if row else None,
+            "schedule": schedules[key],
         })
     completed = [item["completed_at"] for item in items if item["completed_at"]]
     return {"items": items, "latest": max(completed) if completed else None}
@@ -332,6 +368,7 @@ def inject_globals():
         "can_access_scorecard": can_access_scorecard,
         "csrf_token": csrf_token,
         "refresh_ticker": refresh_ticker,
+        "announcement_ticker": get_setting("portal_announcement", "") if session.get("user") else "",
     }
 
 
@@ -444,11 +481,15 @@ def dashboard():
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
     selected_agent = request.args.get("agent", "").strip() if view == "cs" else ""
     cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), selected_agent)
+    sales_management_report = sales_management(report)
+    cs_management_report = cs_management(cs_report)
     attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
         "dashboard_v2.html", active_page="dashboard", page_title={"cs": "CS Dashboard", "sales": "Sales Dashboard", "attendance": "Attendance Dashboard"}[view],
         view=view, selection=selection, cs_report=cs_report, attendance_report=attendance_report,
-        report=report, top_performers=top_performers, bottom_performers=bottom_performers,
+        report=report, sales_management=sales_management_report,
+        cs_management=cs_management_report,
+        top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"],
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
         available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
@@ -522,7 +563,8 @@ def zoho():
             department_key = allowed
     department = ZOHO_DEPARTMENTS.get(department_key, ZOHO_DEPARTMENTS["customer_experience"])
     metrics = zoho_metrics(start.isoformat(), end.isoformat(), department["id"])
-    return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
+    detailed = cs_dashboard(start.isoformat(), end.isoformat())
+    return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, detailed_metrics=[detailed["channels"]["email"], detailed["channels"]["inbound"]], departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
 
 
 @app.route("/bik")
@@ -535,7 +577,8 @@ def bik():
     if report_key not in allowed_reports:
         report_key = allowed_reports[0]
     metrics = bik_metrics(start.isoformat(), end.isoformat()) if report_key == "customer_tickets" else bik_conversation_metrics(start.isoformat(), end.isoformat())
-    return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, bik_report=report_key, allowed_bik_reports=allowed_reports, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
+    detailed = cs_dashboard(start.isoformat(), end.isoformat())
+    return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, detailed_metrics=[detailed["channels"]["chats"], detailed["channels"]["orm"]], bik_report=report_key, allowed_bik_reports=allowed_reports, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
 
 
 @app.route("/shopify")
@@ -992,7 +1035,10 @@ def manage_users():
         if not email.endswith("@wellbeingnutrition.com"):
             flash("Use a wellbeingnutrition.com email address.", "error")
         else:
-            save_portal_user(email, request.form.get("display_name"), role, True, session["user"]["email"])
+            save_portal_user(
+                email, request.form.get("display_name"), role, True,
+                session["user"]["email"], request.form.get("business_role", "Unassigned"),
+            )
             permissions = request.form.getlist("permissions") if role == "user" else []
             set_portal_permissions(email, [*permissions, "shopify.view"] if role == "user" else [], session["user"]["email"])
             flash(f"Access saved for {email}.", "success")
@@ -1001,7 +1047,21 @@ def manage_users():
         "users.html", active_page="users", page_title="User Management",
         users=[dict(user, permissions=get_portal_permissions(user["email"])) for user in list_portal_users()],
         primary_admin=PRIMARY_ADMIN_EMAIL, permission_options=PORTAL_PERMISSIONS,
+        business_roles=("CS", "Sales", "Nutritionist", "Unassigned"),
     )
+
+
+@app.route("/admin/ticker", methods=["POST"])
+@admin_required
+def update_announcement_ticker():
+    require_csrf()
+    message = "" if request.form.get("action") == "clear" else (request.form.get("message") or "").strip()
+    if len(message) > 500:
+        flash("Announcement must be 500 characters or fewer.", "error")
+    else:
+        set_setting("portal_announcement", message)
+        flash("Announcement cleared." if not message else "Announcement saved and broadcast.", "success")
+    return redirect(request.form.get("next") or url_for("dashboard"))
 
 
 @app.route("/admin/users/update", methods=["POST"])
@@ -1019,6 +1079,7 @@ def update_user():
         save_portal_user(
             email, existing.get("display_name"), role,
             request.form.get("active") == "1", session["user"]["email"],
+            request.form.get("business_role", existing.get("business_role") or "Unassigned"),
         )
         permissions = request.form.getlist("permissions") if role == "user" else []
         set_portal_permissions(email, [*permissions, "shopify.view"] if role == "user" else [], session["user"]["email"])

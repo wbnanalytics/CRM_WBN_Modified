@@ -1,0 +1,23 @@
+{% set selected_employee_key = report.selected_employee.employee_key if report.selected_employee else '' %}
+{% set sales_detail_url = url_for('shopify', period=selection.period, date=selection.date, week=selection.week, month=selection.month, year=selection.year, agent=selected_employee_key) %}
+<div class="dashboard-export-row"><a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=selection.period, date=selection.date, week=selection.week, month=selection.month, year=selection.year, agent=selected_employee_key) }}">Download filtered dashboard data</a></div>
+<section class="metric-grid management-kpi-grid">
+  <article class="metric-card featured"><div class="metric-top"><span>Total attributed sales</span><span class="trend neutral">Shopify</span></div><strong><a class="management-drill-link" href="{{ sales_detail_url }}">{{ sales_management.sales|inr }}</a></strong><p>All identified CRM contributors · {{ selection.start.strftime('%d %b') }} – {{ selection.end.strftime('%d %b %Y') }}</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong><a class="management-drill-link" href="{{ sales_detail_url }}">{{ '{:,}'.format(sales_management.orders) }}</a></strong><p>Orders with an employee attribution</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Average order value</span><span class="metric-symbol sage">₹</span></div><strong><a class="management-drill-link" href="{{ sales_detail_url }}">{{ sales_management.aov|inr }}</a></strong><p>Attributed sales divided by attributed orders</p></article>
+  <article class="metric-card"><div class="metric-top"><span>Sales-team target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Configured target for managed team members</p></article>
+</section>
+<section class="management-grid">
+  <article class="panel management-panel"><div class="panel-head"><div><span class="eyebrow">CONTRIBUTION MIX</span><h2>Where CRM sales came from</h2><p class="panel-description">Sales Team, Nutritionists, Customer Success, CRM Admin/replacement activity and unassigned records are shown separately.</p></div></div>
+    <div class="management-bars">{% for group in sales_management.split %}<div class="management-bar-row {{ 'crm-admin-sales' if group.name == 'CRM Admin / Replacement' }}"><div><strong>{{ group.name }}</strong><small>{{ group.orders }} orders · AOV {{ group.aov|inr }}</small></div><div class="bar-track"><i style="width:{{ group.share|round(1) }}%"></i></div><b>{{ group.sales|inr }} <small>{{ group.share|round(1) }}%</small></b></div>{% endfor %}</div>
+  </article>
+  <article class="panel management-panel"><div class="panel-head"><div><span class="eyebrow">ACTION REQUIRED</span><h2>Sales checks</h2></div></div>
+    <div class="management-checks">
+      <div><span>Unassigned sales</span><strong>{{ sales_management.unassigned_sales|inr }}</strong><small>Review employee attribution before performance decisions.</small></div>
+      <div><span>Discount analysis</span>{% if sales_management.discount_available %}<strong>{{ sales_management.discounts|inr }}</strong><small>{{ sales_management.discount_rate|round(1) }}% of gross attributed sales ({{ sales_management.gross_sales|inr }}).</small>{% else %}<strong>Refresh required</strong><small>Use Refresh All Data once to backfill Shopify gross sales and discounts for this period.</small>{% endif %}</div>
+    </div>
+  </article>
+</section>
+<section class="panel management-panel"><div class="panel-head"><div><span class="eyebrow">PRODUCT VIEW</span><h2>CRM team products by quantity sold</h2><p class="panel-description">Management ranking from the same filtered Shopify period. Nutritionist activity is excluded from this CRM-team table.</p></div><a class="outline-button" href="{{ url_for('shopify', period=selection.period, date=selection.date, month=selection.month, year=selection.year) }}">Open detailed sales report</a></div>
+  <div class="table-wrap"><table class="readable-table"><thead><tr><th>Rank</th><th>Product</th><th>SKU</th><th>Quantity</th><th>Sales</th><th>Orders</th></tr></thead><tbody>{% for product in sales_management.products %}<tr><td><span class="rank-chip">{{ loop.index }}</span></td><td><strong>{{ product.product }}</strong></td><td>{{ product.sku }}</td><td><strong>{{ product.quantity }}</strong></td><td>{{ product.sales|inr }}</td><td>{{ product.orders }}</td></tr>{% else %}<tr><td colspan="6" class="empty-state">No product-level Shopify data is available for this period.</td></tr>{% endfor %}</tbody></table></div>
+</section>
