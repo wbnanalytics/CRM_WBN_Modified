@@ -16,7 +16,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260825-2') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260825-3') }}">
   <script src="{{ url_for('static', filename='app.js', v='20260825-2') }}" defer></script>
 </head>
 <body>
@@ -67,7 +67,7 @@
           </div>
         </dialog>{% endif %}
       </div>
-      {% if announcement_ticker %}<div class="broadcast-ticker" role="status" aria-label="Portal announcement"><span class="broadcast-label">ANNOUNCEMENT</span><div class="broadcast-window"><div class="broadcast-track"><span>{{ announcement_ticker }}</span><span aria-hidden="true">{{ announcement_ticker }}</span></div></div></div>{% endif %}
+      {% if announcement_ticker %}<div class="broadcast-ticker" role="status" aria-label="Portal announcement"><span class="broadcast-label">ANNOUNCEMENT</span><span class="broadcast-message">{{ announcement_ticker }}</span></div>{% endif %}
       {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}
       {% block content %}{% endblock %}
     </main>
