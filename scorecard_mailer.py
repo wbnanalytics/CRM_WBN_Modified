@@ -1,4 +1,6 @@
 import html
+import base64
+import mimetypes
 import os
 import smtplib
 import ssl
@@ -39,7 +41,28 @@ def email_ready():
     return graph_ready if transport == "graph" else smtp_ready
 
 
-def _send_graph(subject, body, plain_text, recipient, sender):
+def _recipient_payload(recipients):
+    if isinstance(recipients, str):
+        recipients = [recipients]
+    return [{"emailAddress": {"address": address}} for address in recipients]
+
+
+def _inline_attachments(inline_images):
+    attachments = []
+    for content_id, path in (inline_images or {}).items():
+        mime_type = mimetypes.guess_type(path)[0] or "image/png"
+        attachments.append({
+            "@odata.type": "#microsoft.graph.fileAttachment",
+            "name": os.path.basename(path),
+            "contentType": mime_type,
+            "contentBytes": base64.b64encode(open(path, "rb").read()).decode("ascii"),
+            "contentId": content_id,
+            "isInline": True,
+        })
+    return attachments
+
+
+def _send_graph(subject, body, plain_text, recipient, sender, cc=None, inline_images=None):
     token_response = requests.post(
         f"https://login.microsoftonline.com/{os.environ['AZURE_TENANT_ID']}/oauth2/v2.0/token",
         data={
@@ -61,7 +84,9 @@ def _send_graph(subject, body, plain_text, recipient, sender):
             "message": {
                 "subject": subject,
                 "body": {"contentType": "HTML", "content": body},
-                "toRecipients": [{"emailAddress": {"address": recipient}}],
+                "toRecipients": _recipient_payload(recipient),
+                "ccRecipients": _recipient_payload(cc or []),
+                "attachments": _inline_attachments(inline_images),
             },
             "saveToSentItems": True,
         },
@@ -76,19 +101,59 @@ def _send_graph(subject, body, plain_text, recipient, sender):
         raise RuntimeError(f"Microsoft Graph rejected the message ({response.status_code}){suffix}")
 
 
-def _send_smtp(subject, body, plain_text, recipient, config):
+def _send_smtp(subject, body, plain_text, recipient, config, cc=None, inline_images=None):
+    recipients = [recipient] if isinstance(recipient, str) else list(recipient)
+    cc = list(cc or [])
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = config["sender"]
-    message["To"] = recipient
+    message["To"] = ", ".join(recipients)
+    if cc:
+        message["Cc"] = ", ".join(cc)
     message.set_content(plain_text)
     message.add_alternative(body, subtype="html")
+    html_part = message.get_payload()[-1]
+    for content_id, path in (inline_images or {}).items():
+        mime_type = mimetypes.guess_type(path)[0] or "image/png"
+        maintype, subtype = mime_type.split("/", 1)
+        with open(path, "rb") as source:
+            html_part.add_related(source.read(), maintype=maintype, subtype=subtype, cid=f"<{content_id}>")
     with smtplib.SMTP(config["host"], config["port"], timeout=30) as smtp:
         smtp.ehlo()
         smtp.starttls(context=ssl.create_default_context())
         smtp.ehlo()
         smtp.login(config["user"], config["password"])
         smtp.send_message(message)
+
+
+def send_html_email(subject, body, plain_text, recipients, cc=None, inline_images=None):
+    """Send a branded application email through the configured Microsoft 365 mailbox."""
+    recipients = [recipients] if isinstance(recipients, str) else list(recipients)
+    cc = list(cc or [])
+    all_addresses = recipients + cc
+    if not recipients:
+        raise ValueError("At least one recipient is required")
+    if any(not address.lower().endswith("@wellbeingnutrition.com") for address in all_addresses):
+        raise ValueError("CRM emails can only be sent to wellbeingnutrition.com addresses")
+    if not email_ready():
+        raise RuntimeError("Email is not configured")
+    config = _mail_config()
+    graph_ready = bool(
+        config["sender"] and os.getenv("AZURE_TENANT_ID")
+        and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
+    )
+    transport = _mail_setting(
+        "CRM_MAIL_TRANSPORT", "crm_mail_transport",
+        default="graph" if graph_ready else "smtp",
+    ).lower()
+    if transport == "graph":
+        if not graph_ready:
+            raise RuntimeError("Microsoft Graph mail is selected but the Azure application credentials are incomplete")
+        _send_graph(subject, body, plain_text, recipients, config["sender"], cc=cc, inline_images=inline_images)
+        return
+    if transport != "smtp":
+        raise RuntimeError("CRM_MAIL_TRANSPORT must be graph or smtp")
+    _send_smtp(subject, body, plain_text, recipients, config, cc=cc, inline_images=inline_images)
 
 
 def _score_rows(record):

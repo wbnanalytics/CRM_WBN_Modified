@@ -1,0 +1,13 @@
+[Unit]
+Description=Send Friday CRM weekly recognition at 23:59 IST
+
+[Timer]
+OnCalendar=Fri *-*-* 23:59:00 Asia/Kolkata
+Persistent=false
+AccuracySec=30s
+RandomizedDelaySec=0
+Unit=wbn-crm-recognition@weekly.service
+
+[Install]
+WantedBy=timers.target
+

@@ -1,0 +1,13 @@
+[Unit]
+Description=Check CRM daily sales target achievers hourly in IST
+
+[Timer]
+OnCalendar=*-*-* *:15:00 Asia/Kolkata
+Persistent=false
+AccuracySec=30s
+RandomizedDelaySec=0
+Unit=wbn-crm-recognition@targets.service
+
+[Install]
+WantedBy=timers.target
+

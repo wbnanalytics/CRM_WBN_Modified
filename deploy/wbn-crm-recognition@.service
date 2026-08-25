@@ -1,0 +1,15 @@
+[Unit]
+Description=WBN CRM recognition email workflow (%i)
+After=network-online.target wbn-crm.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=wbncrm
+Group=wbncrm
+WorkingDirectory=/opt/wbn-crm/current
+EnvironmentFile=/etc/wbn-crm.env
+ExecStart=/opt/wbn-crm/venv/bin/python /opt/wbn-crm/current/sales_recognition_scheduler.py %i
+Nice=5
+NoNewPrivileges=true
+

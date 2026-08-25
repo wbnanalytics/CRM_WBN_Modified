@@ -1,0 +1,13 @@
+[Unit]
+Description=Send weekday CRM recognition emails at 11:00 IST
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 11:00:00 Asia/Kolkata
+Persistent=false
+AccuracySec=30s
+RandomizedDelaySec=0
+Unit=wbn-crm-recognition@daily.service
+
+[Install]
+WantedBy=timers.target
+
