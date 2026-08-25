@@ -10,8 +10,18 @@ SPAM_SUBCATEGORIES = {"spam / invalid / irrelevant", "brand/marketing related", 
 RESOLVED = {"CLOSED", "BULK_CLOSED", "AUTO_CLOSED", "BULK_AUTO_CLOSED"}
 SPAM = {"BULK_CLOSED_AS_SPAM", "CLOSED_AS_SPAM", "CLOSE AS SPAM"}
 ESCALATED = {"WAITING_ON_CUSTOMER", "BULK_WAITING_ON_CUSTOMER", "ESCALATED", "BULK_ESCALATED"}
-ALIASES = {"shubham": "Shubham Kadam", "aditya": "Aditya Shinde", "tapasya": "Tapasya Dhekane", "khushbu": "Khushbu Nishad"}
-SYSTEM_AGENTS = {"unassigned", "bot", "wellbeing nutrition", "wellbeing nutrition_main"}
+ALIASES = {
+    "shubham": "Shubham Kadam",
+    "aditya": "Aditya Shinde",
+    "tapasya": "Tapasya Dhekane",
+    "khushbu": "Khushbu Nishad",
+    # BIK exports both brand inbox identities in the Agent name column. They
+    # are non-human account identities, but the export does not prove that
+    # every interaction was automated, so keep one accurate system category.
+    "wellbeing nutrition": "BIK System Account",
+    "wellbeing nutrition_main": "BIK System Account",
+}
+SYSTEM_AGENTS = {"unassigned", "bot", "bik system account"}
 
 
 def tagged_general(raw):
