@@ -164,6 +164,7 @@ def init_db():
                 product_sku TEXT NOT NULL DEFAULT '',
                 total_sales REAL NOT NULL DEFAULT 0,
                 order_count INTEGER NOT NULL DEFAULT 0,
+                quantity_sold INTEGER NOT NULL DEFAULT 0,
                 synced_at TEXT NOT NULL,
                 PRIMARY KEY (day, employee_key, product_title, product_sku)
             );
@@ -416,6 +417,13 @@ def init_db():
                 ON crm_appraisals(agent_id, review_date DESC);
             """
         )
+        product_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(shopify_product_sales_daily)").fetchall()
+        }
+        if "quantity_sold" not in product_columns:
+            db.execute(
+                "ALTER TABLE shopify_product_sales_daily ADD COLUMN quantity_sold INTEGER NOT NULL DEFAULT 0"
+            )
         now = utc_now()
         db.execute(
             """INSERT INTO portal_users
@@ -521,6 +529,21 @@ def set_portal_permissions(email, permission_keys, granted_by):
             [(normalized, key, granted_by, now) for key in keys],
         )
     return keys
+
+
+def grant_permission_to_all_users(permission_key, granted_by="system"):
+    """Grant a read permission to every active non-admin user without removing existing access."""
+    now = utc_now()
+    with db_connection() as db:
+        users = db.execute(
+            "SELECT email FROM portal_users WHERE active=1 AND role='user'"
+        ).fetchall()
+        db.executemany(
+            """INSERT OR IGNORE INTO portal_permissions
+               (email, permission_key, granted_by, granted_at) VALUES (?, ?, ?, ?)""",
+            [(row["email"], permission_key, granted_by, now) for row in users],
+        )
+    return len(users)
 
 
 def start_sync_run(source, report_key, start_date, end_date):
@@ -728,14 +751,15 @@ def replace_shopify_product_sales(start_date, end_date, rows):
         db.executemany(
             """INSERT INTO shopify_product_sales_daily
                (day, employee_key, source_employee_name, product_title, product_sku,
-                total_sales, order_count, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                total_sales, order_count, quantity_sold, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(day, employee_key, product_title, product_sku) DO UPDATE SET
                  source_employee_name=excluded.source_employee_name,
                  total_sales=excluded.total_sales,
                  order_count=excluded.order_count,
+                 quantity_sold=excluded.quantity_sold,
                  synced_at=excluded.synced_at""",
-            [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), int(row["order_count"]), now) for row in rows],
+            [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), int(row["order_count"]), int(row.get("quantity_sold") or 0), now) for row in rows],
         )
     return len(rows)
 
@@ -746,7 +770,7 @@ def shopify_product_sales_between(start_date, end_date):
             """SELECT p.day, p.employee_key,
                       COALESCE(c.display_name, p.source_employee_name) AS display_name,
                       COALESCE(c.role, 'Unassigned') AS role,
-                      p.product_title, p.product_sku, p.total_sales, p.order_count
+                      p.product_title, p.product_sku, p.total_sales, p.order_count, p.quantity_sold
                FROM shopify_product_sales_daily p
                LEFT JOIN shopify_employee_config c ON c.employee_key=p.employee_key
                WHERE p.day BETWEEN ? AND ?

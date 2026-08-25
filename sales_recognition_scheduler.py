@@ -24,6 +24,7 @@ FIXED_CC = [
     "soumik@wellbeingnutrition.com",
     "khushbu.nishad@wellbeingnutrition.com",
     "ashutosh@wellbeingnutrition.com",
+    "ahanti.v@wellbeingnutrition.com",
 ]
 
 
@@ -90,8 +91,10 @@ def _send_once(event_key, email_type, period_label, subject, body, recipients):
     recipients = list(dict.fromkeys(address.lower() for address in recipients if address))
     if not recipients or _already_sent(event_key):
         return False
+    recipient_set = set(recipients)
+    cc = [address for address in FIXED_CC if address.lower() not in recipient_set]
     send_html_email(
-        subject, body, html.unescape(subject), recipients, cc=FIXED_CC,
+        subject, body, html.unescape(subject), recipients, cc=cc,
         inline_images={"wbn-logo": _logo_path()},
     )
     _record_sent(event_key, email_type, period_label, recipients)

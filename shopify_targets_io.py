@@ -100,7 +100,7 @@ def performance_excel(report, product_field="all", product_query=""):
     for index, column in enumerate(sheet.columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 28)
     product_sheet = book.create_sheet("Product by Employee")
-    product_sheet.append(["Employee", "Role", "Product", "SKU", "Sales", "Orders", "Average Order Value"])
+    product_sheet.append(["Employee", "Role", "Product", "SKU", "Quantity Sold", "Sales", "Orders", "Average Order Value"])
     for cell in product_sheet[1]:
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
@@ -113,13 +113,32 @@ def performance_excel(report, product_field="all", product_query=""):
         else:
             product_rows = [item for item in product_rows if query in " ".join(str(item.get(key) or "").lower() for key in fields.values())]
     for item in product_rows:
-        product_sheet.append([item["display_name"], item["role"], item["product_title"], item["product_sku"], item["total"], item["orders"], item["average_order_value"]])
+        product_sheet.append([
+            item["display_name"], item["role"], item["product_title"], item["product_sku"],
+            item.get("quantity", 0), item["total"], item["orders"], item["average_order_value"],
+        ])
     product_sheet.freeze_panes = "A2"
     product_sheet.auto_filter.ref = product_sheet.dimensions
-    for row in product_sheet.iter_rows(min_row=2, min_col=5, max_col=7):
-        row[0].number_format = row[2].number_format = '₹#,##0.00'
+    for row in product_sheet.iter_rows(min_row=2, min_col=5, max_col=8):
+        row[1].number_format = row[3].number_format = '₹#,##0.00'
     for index, column in enumerate(product_sheet.columns, start=1):
         product_sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 34)
+    team_product_sheet = book.create_sheet("CRM Product Summary")
+    team_product_sheet.append(["Rank", "Product", "SKU", "Quantity Sold", "Sales", "Orders", "Average Order Value"])
+    for cell in team_product_sheet[1]:
+        cell.fill = PatternFill("solid", fgColor=LIME)
+        cell.font = Font(bold=True)
+    for rank, item in enumerate(report.get("team_product_rows", []), start=1):
+        team_product_sheet.append([
+            rank, item["product_title"], item["product_sku"], item.get("quantity", 0),
+            item["total"], item["orders"], item["average_order_value"],
+        ])
+    team_product_sheet.freeze_panes = "A2"
+    team_product_sheet.auto_filter.ref = team_product_sheet.dimensions
+    for row in team_product_sheet.iter_rows(min_row=2, min_col=5, max_col=7):
+        row[0].number_format = row[2].number_format = '₹#,##0.00'
+    for index, column in enumerate(team_product_sheet.columns, start=1):
+        team_product_sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 42)
     output = BytesIO()
     book.save(output)
     output.seek(0)

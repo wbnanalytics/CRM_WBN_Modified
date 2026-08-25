@@ -43,7 +43,7 @@ def list_agents(active_only=False):
 
 
 def ensure_agent_portal_access(agent, actor="scorecard-sync"):
-    """Keep active Scorecard agents as dashboard-only portal users."""
+    """Keep active Scorecard agents as read-only dashboard and Shopify users."""
     email = (agent.get("email") or "").strip().lower()
     if not agent.get("active") or not email.endswith("@wellbeingnutrition.com"):
         return False
@@ -56,7 +56,7 @@ def ensure_agent_portal_access(agent, actor="scorecard-sync"):
     if existing:
         return False
     save_portal_user(email, agent.get("name") or email.split("@", 1)[0], "user", True, actor)
-    set_portal_permissions(email, ["dashboard"], actor)
+    set_portal_permissions(email, ["dashboard", "shopify.view"], actor)
     return True
 
 

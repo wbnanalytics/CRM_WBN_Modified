@@ -106,7 +106,7 @@
 {% if week_end_report.growth.points|length > 1 %}
 <section class="panel sales-growth-panel week-end-growth-panel" aria-label="Week End sales growth trend">
   <div class="panel-head growth-panel-head">
-    <div><span class="eyebrow">WEEK END GROWTH</span><h2>Week-ending managed-team sales</h2><p class="panel-description">Saturday–Friday performance across the selected month.</p></div>
+    <div><span class="eyebrow">WEEK END GROWTH</span><h2>Week-ending managed-team sales</h2><p class="panel-description">Saturday–Friday performance across the selected {{ 'year' if period == 'yearly' else 'month' }}.</p></div>
     {% if week_end_report.growth.change is not none %}<span class="growth-change {{ 'positive' if week_end_report.growth.change >= 0 else 'negative' }}">{{ '↗' if week_end_report.growth.change >= 0 else '↘' }} {{ (week_end_report.growth.change|abs * 100)|round(1) }}% vs previous week</span>{% endif %}
   </div>
   <div class="growth-chart-shell">

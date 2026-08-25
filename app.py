@@ -15,7 +15,7 @@ from flask import Flask, abort, flash, jsonify, redirect, render_template, reque
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
     PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, bulk_set_shopify_targets,
-    get_portal_permissions, get_portal_user, init_db, latest_sync_request,
+    get_portal_permissions, get_portal_user, grant_permission_to_all_users, init_db, latest_sync_request,
     list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
     save_portal_user, set_portal_permissions, shopify_targets_between, zoho_metrics,
 )
@@ -71,6 +71,7 @@ PORTAL_PERMISSIONS = (
 )
 VALID_PERMISSION_KEYS = {item[0] for item in PORTAL_PERMISSIONS}
 scorecards.sync_agents_to_portal_users()
+grant_permission_to_all_users("shopify.view", "system-default")
 
 
 REPORT_SOURCES = {
@@ -546,8 +547,10 @@ def shopify():
     selected_agent = request.args.get("agent", "").strip()
     report = shopify_sales_report(period, anchor, selected_agent)
     week_end_report = None
-    if period == "monthly":
-        week_end_report = shopify_sales_report("weekly_month", anchor, selected_agent)
+    if period in {"monthly", "yearly"}:
+        week_end_report = shopify_sales_report(
+            "weekly_year" if period == "yearly" else "weekly_month", anchor, selected_agent
+        )
     iso = anchor.isocalendar()
     return render_template(
         "shopify.html", active_page="shopify", page_title="Shopify Sales",
@@ -642,10 +645,13 @@ def download_shopify_performance():
 def download_shopify_week_end():
     selection = selected_reporting_period("monthly")
     source_period, anchor = selection["period"], selection["anchor"]
-    if source_period != "monthly":
+    if source_period not in {"monthly", "yearly"}:
         abort(404)
-    report = shopify_sales_report("weekly_month", anchor, request.args.get("agent", "").strip())
-    label = anchor.strftime("%Y-%m")
+    report = shopify_sales_report(
+        "weekly_year" if source_period == "yearly" else "weekly_month",
+        anchor, request.args.get("agent", "").strip(),
+    )
+    label = str(anchor.year) if source_period == "yearly" else anchor.strftime("%Y-%m")
     return send_file(
         performance_excel(report), as_attachment=True,
         download_name=f"shopify-week-end-report-{label}.xlsx",
@@ -987,7 +993,8 @@ def manage_users():
             flash("Use a wellbeingnutrition.com email address.", "error")
         else:
             save_portal_user(email, request.form.get("display_name"), role, True, session["user"]["email"])
-            set_portal_permissions(email, request.form.getlist("permissions") if role == "user" else [], session["user"]["email"])
+            permissions = request.form.getlist("permissions") if role == "user" else []
+            set_portal_permissions(email, [*permissions, "shopify.view"] if role == "user" else [], session["user"]["email"])
             flash(f"Access saved for {email}.", "success")
         return redirect(url_for("manage_users"))
     return render_template(
@@ -1013,7 +1020,8 @@ def update_user():
             email, existing.get("display_name"), role,
             request.form.get("active") == "1", session["user"]["email"],
         )
-        set_portal_permissions(email, request.form.getlist("permissions") if role == "user" else [], session["user"]["email"])
+        permissions = request.form.getlist("permissions") if role == "user" else []
+        set_portal_permissions(email, [*permissions, "shopify.view"] if role == "user" else [], session["user"]["email"])
         flash(f"Access updated for {email}.", "success")
     return redirect(url_for("manage_users"))
 
