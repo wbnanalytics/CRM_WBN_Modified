@@ -9,7 +9,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from attendance_service import attendance_period
-from database import db_connection, list_shopify_employees, utc_now
+from database import db_connection, list_portal_users, list_shopify_employees, utc_now
 from sales_celebration_mailer import (
     _email_shell, _inr, _name_chips, _period_rankings, ranking_email,
 )
@@ -37,12 +37,20 @@ def _email_directory():
         for employee in list_shopify_employees()
         if employee.get("active") and employee.get("include_in_team")
     }
-    return {
+    directory = {
+        _normalize(user["display_name"]): user["email"].strip().lower()
+        for user in list_portal_users()
+        if user.get("active")
+        if _normalize(user.get("display_name")) in eligible_names
+        if (user.get("email") or "").lower().endswith("@wellbeingnutrition.com")
+    }
+    directory.update({
         _normalize(agent["name"]): agent["email"].strip().lower()
         for agent in list_agents(active_only=True)
         if _normalize(agent["name"]) in eligible_names
         if (agent.get("email") or "").lower().endswith("@wellbeingnutrition.com")
-    }
+    })
+    return directory
 
 
 def _logo_path():
