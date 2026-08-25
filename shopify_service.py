@@ -23,15 +23,16 @@ ALIASES = {
 }
 
 DEFAULT_EMPLOYEES = (
-    ("Akash Varma", "Sales", 170625),
-    ("Babita Bagdi", "Sales", 170625),
-    ("Eeshika Pujari", "Sales", 170625),
-    ("Rachana Rathod", "Sales", 170625),
-    ("Shubh Pajwani", "Sales", 170625),
-    ("Akshay Shah", "Sales", 170625),
-    ("Shahnawaz Ansari", "Sales", 170625),
-    ("Ajay Cynthala", "Sales", 170625),
-    ("Yusuf Shaikh", "Sales", 170625),
+    ("Babita Bagdi", "CRM - Sales", 170625),
+    ("Kajol Rajput", "CRM - Sales", 170625),
+    ("Akash Varma", "CRM - Sales", 170625),
+    ("Eeshika Pujari", "CRM - Sales", 170625),
+    ("Rachana Rathod", "CRM - Sales", 170625),
+    ("Shubh Pajwani", "CRM - Sales", 170625),
+    ("Akshay Shah", "CRM - Sales", 170625),
+    ("Shahnawaz Ansari", "CRM - Sales", 170625),
+    ("Ajay Cynthala", "CRM - Sales", 170625),
+    ("Yusuf Shaikh", "CRM - Sales", 170625),
     ("Muskan Padvekar", "CRM - CS - Emails", 85313),
     ("Akil Shaikh", "CRM - CS - Emails", 85313),
     ("Sampada Nayak", "CRM - CS - ORM", 85313),
@@ -39,9 +40,10 @@ DEFAULT_EMPLOYEES = (
     ("Salman Shaikh", "CRM - CS - Calls", 85313),
     ("Tapasya Dhekane", "CRM - CS - ORM", 85313),
     ("Aditya Shinde", "CRM - CS - Limechat", 85313),
-    ("Shubham Kadam", "CRM - CS - Emails", 85313),
-    ("Purvi Gawade", "CRM - CS - Limechat", 85313),
-    ("Atul Aherwar", "Team Coach", 0),
+    ("Shubham Kadam", "CRM - CS - Calls", 85313),
+    ("Purvi Gawade", "CRM - CS - Calls", 85313),
+    ("Ahanti Vichare", "CRM - Quality Assurance", 0),
+    ("Atul Aherwar", "CRM - Team Coach", 0),
 )
 
 
