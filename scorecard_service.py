@@ -2,7 +2,10 @@ import json
 import re
 from datetime import date, datetime
 
-from database import db_connection, utc_now
+from database import (
+    PRIMARY_ADMIN_EMAIL, db_connection, get_portal_user, save_portal_user, set_portal_permissions,
+    utc_now,
+)
 
 
 DEFAULT_BEHAVIOURS = (
@@ -39,6 +42,28 @@ def list_agents(active_only=False):
     return [dict(row) for row in rows]
 
 
+def ensure_agent_portal_access(agent, actor="scorecard-sync"):
+    """Keep active Scorecard agents as dashboard-only portal users."""
+    email = (agent.get("email") or "").strip().lower()
+    if not agent.get("active") or not email.endswith("@wellbeingnutrition.com"):
+        return False
+    if email == PRIMARY_ADMIN_EMAIL:
+        return False
+    existing = get_portal_user(email)
+    # Never downgrade an admin or overwrite access that an admin has already
+    # configured. Automatic enrollment is only for agents missing from the
+    # portal directory.
+    if existing:
+        return False
+    save_portal_user(email, agent.get("name") or email.split("@", 1)[0], "user", True, actor)
+    set_portal_permissions(email, ["dashboard"], actor)
+    return True
+
+
+def sync_agents_to_portal_users(actor="scorecard-sync"):
+    return sum(1 for agent in list_agents(active_only=True) if ensure_agent_portal_access(agent, actor))
+
+
 def get_agent(agent_id=None, emp_id=None):
     field, value = ("id", agent_id) if agent_id is not None else ("emp_id", emp_id)
     with db_connection() as db:
@@ -64,14 +89,17 @@ def save_agent(payload, actor, agent_id=None):
                    active=?, updated_at=? WHERE id=?""",
                 (emp_id, name, email, department, start_date, int(bool(payload.get("active", True))), now, agent_id),
             )
-            return agent_id
-        cursor = db.execute(
-            """INSERT INTO crm_agents
-               (emp_id, name, email, department, start_date, active, created_by, created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (emp_id, name, email, department, start_date, int(bool(payload.get("active", True))), actor, now, now),
-        )
-        return cursor.lastrowid
+            saved_id = agent_id
+        else:
+            cursor = db.execute(
+                """INSERT INTO crm_agents
+                   (emp_id, name, email, department, start_date, active, created_by, created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (emp_id, name, email, department, start_date, int(bool(payload.get("active", True))), actor, now, now),
+            )
+            saved_id = cursor.lastrowid
+    ensure_agent_portal_access(get_agent(agent_id=saved_id), actor)
+    return saved_id
 
 
 def toggle_agent(agent_id):

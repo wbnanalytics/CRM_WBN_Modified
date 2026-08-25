@@ -73,3 +73,36 @@ document.querySelectorAll('.leave-balance-input').forEach((input) => {
     }
   });
 });
+
+document.querySelectorAll('.employee-profile-select').forEach((select) => {
+  select.addEventListener('change', async () => {
+    const employeeKey = select.dataset.employeeKey;
+    const profileSelects = [...document.querySelectorAll(`.employee-profile-select[data-employee-key="${employeeKey}"]`)];
+    const role = profileSelects.find((item) => item.dataset.profileKind === 'role');
+    const employmentStatus = profileSelects.find((item) => item.dataset.profileKind === 'employment_status');
+    profileSelects.forEach((item) => { item.disabled = true; item.classList.add('saving'); });
+    try {
+      const response = await fetch('/api/attendance/employee', {
+        method: 'POST', credentials: 'same-origin',
+        headers: {'Content-Type': 'application/json', 'X-CSRF-Token': attendanceCsrf},
+        body: JSON.stringify({
+          employee_key: employeeKey,
+          role: role.value,
+          employment_status: employmentStatus.value,
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Employee profile update failed');
+      profileSelects.forEach((item) => { item.dataset.original = item.value; });
+      employmentStatus.classList.toggle('active', result.employment_status === 'Active');
+      employmentStatus.classList.toggle('inactive', result.employment_status !== 'Active');
+      employmentStatus.closest('tr')?.classList.toggle('inactive-row', result.employment_status !== 'Active');
+      attendanceToast('Employee role and status updated');
+    } catch (error) {
+      profileSelects.forEach((item) => { item.value = item.dataset.original; });
+      attendanceToast(error.message || 'Employee profile update failed', true);
+    } finally {
+      profileSelects.forEach((item) => { item.disabled = false; item.classList.remove('saving'); });
+    }
+  });
+});

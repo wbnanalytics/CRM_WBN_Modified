@@ -1,5 +1,6 @@
 {% extends "layout.html" %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='attendance_admin.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <section class="page-heading attendance-heading">
   <div><span class="eyebrow">WORKFORCE / ATTENDANCE</span><h1>Attendance Planner</h1><p>Monthly CRM attendance with the complete historical workbook carried forward.</p></div>
@@ -17,7 +18,7 @@
 </section>
 
 <section class="panel attendance-panel">
-  <div class="panel-head attendance-panel-head"><div><span class="eyebrow">MONTHLY PLANNER</span><h2>{{ report.start.strftime('%B %Y') }}</h2></div><div class="attendance-help">{% if is_admin %}<strong>Admin editing enabled</strong><span>Use a date cell to mark Present or Absent.</span>{% else %}<strong>Read-only access</strong><span>Attendance changes are restricted to admins.</span>{% endif %}</div></div>
+  <div class="panel-head attendance-panel-head"><div><span class="eyebrow">MONTHLY PLANNER</span><h2>{{ report.start.strftime('%B %Y') }}</h2></div><div class="attendance-help">{% if is_admin %}<strong>Admin editing enabled</strong><span>Edit role, status, leave balances or daily attendance.</span>{% else %}<strong>Read-only access</strong><span>Attendance changes are restricted to admins.</span>{% endif %}</div></div>
   <div class="attendance-table-wrap">
     <table class="attendance-table">
       <thead><tr>
@@ -28,8 +29,8 @@
       {% for employee in report.employees %}<tr class="{{ 'inactive-row' if not employee.active }}">
         <td class="sticky-col sticky-sr">{{ employee.source_employee_id or loop.index }}</td>
         <td class="sticky-col sticky-name"><strong>{{ employee.employee_name }}</strong></td>
-        <td class="sticky-col sticky-role">{{ employee.role }}</td>
-        <td class="sticky-col sticky-state"><span class="status-pill {{ 'active' if employee.active else 'inactive' }}">{{ employee.employment_status }}</span></td>
+        <td class="sticky-col sticky-role">{% if is_admin %}<select class="employee-profile-select employee-role-select" data-employee-key="{{ employee.employee_key }}" data-profile-kind="role" data-original="{{ employee.role }}" aria-label="{{ employee.employee_name }} role">{% for role in report.employee_roles %}<option value="{{ role }}" {{ 'selected' if employee.role == role }}>{{ role }}</option>{% endfor %}{% if employee.role not in report.employee_roles %}<option value="{{ employee.role }}" selected disabled>{{ employee.role }}</option>{% endif %}</select>{% else %}{{ employee.role }}{% endif %}</td>
+        <td class="sticky-col sticky-state">{% if is_admin %}<select class="employee-profile-select employment-status-select status-pill {{ 'active' if employee.active else 'inactive' }}" data-employee-key="{{ employee.employee_key }}" data-profile-kind="employment_status" data-original="{{ employee.employment_status }}" aria-label="{{ employee.employee_name }} status"><option value="Active" {{ 'selected' if employee.active }}>Active</option><option value="Inactive" {{ 'selected' if not employee.active }}>Inactive</option></select>{% else %}<span class="status-pill {{ 'active' if employee.active else 'inactive' }}">{{ employee.employment_status }}</span>{% endif %}</td>
         {% if is_admin %}<td class="sticky-col sticky-pl"><input class="leave-balance-input" type="number" min="0" max="365" step="0.25" value="{{ employee.pl_balance or 0 }}" data-balance-kind="pl" data-employee-key="{{ employee.employee_key }}" aria-label="{{ employee.employee_name }} PL balance"></td><td class="sticky-col sticky-sl"><input class="leave-balance-input" type="number" min="0" max="365" step="0.25" value="{{ employee.sl_balance or 0 }}" data-balance-kind="sl" data-employee-key="{{ employee.employee_key }}" aria-label="{{ employee.employee_name }} SL balance"></td>{% else %}<td class="sticky-col sticky-pl">{{ employee.pl_balance if employee.pl_balance is not none else '—' }}</td><td class="sticky-col sticky-sl">{{ employee.sl_balance if employee.sl_balance is not none else '—' }}</td>{% endif %}
         {% for item in employee.days %}<td class="attendance-day {{ 'today-column' if item.date == today.isoformat() }} {{ 'future-day' if item.date > today.isoformat() }}" data-attendance-cell>
           {% if is_admin and item.date <= today.isoformat() %}

@@ -25,7 +25,7 @@ from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, target_template
-from attendance_service import attendance_month, attendance_period, set_attendance, set_leave_balance
+from attendance_service import attendance_month, attendance_period, set_attendance, set_employee_profile, set_leave_balance
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
 
@@ -70,6 +70,7 @@ PORTAL_PERMISSIONS = (
     ("scorecard.email", "Scorecard · Send Email", "Email finalized scorecards and appraisals"),
 )
 VALID_PERMISSION_KEYS = {item[0] for item in PORTAL_PERMISSIONS}
+scorecards.sync_agents_to_portal_users()
 
 
 REPORT_SOURCES = {
@@ -141,24 +142,21 @@ def selected_reporting_period(default="daily"):
         if period == "daily":
             anchor = date.fromisoformat(request.args.get("date", today.isoformat()))
         elif period == "weekly":
-            anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+            requested = date.fromisoformat(request.args.get("week_end", today.isoformat()))
+            anchor = requested + timedelta(days=(4 - requested.weekday()) % 7)
         elif period == "monthly":
             anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
         else:
             anchor = date(int(request.args.get("year", today.year)), 1, 1)
     except (TypeError, ValueError):
         anchor = today if period == "daily" else (
-            date(today.year, today.month, 1) if period == "weekly" else
+            today + timedelta(days=(4 - today.weekday()) % 7) if period == "weekly" else
             date(today.year, today.month, 1) if period == "monthly" else date(today.year, 1, 1)
         )
     if period == "daily":
         start = end = anchor
     elif period == "weekly":
-        month_start = date(anchor.year, anchor.month, 1)
-        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
-        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
-        start, end = first_friday - timedelta(days=6), last_friday
+        start, end = anchor - timedelta(days=6), anchor
     elif period == "monthly":
         start = date(anchor.year, anchor.month, 1)
         next_month = date(anchor.year + (anchor.month == 12), 1 if anchor.month == 12 else anchor.month + 1, 1)
@@ -548,9 +546,7 @@ def shopify():
     selected_agent = request.args.get("agent", "").strip()
     report = shopify_sales_report(period, anchor, selected_agent)
     week_end_report = None
-    if period == "monthly":
-        week_end_report = shopify_sales_report("weekly", anchor, selected_agent)
-    elif period == "yearly":
+    if period == "yearly":
         week_end_report = shopify_sales_report("weekly_year", anchor, selected_agent)
     iso = anchor.isocalendar()
     return render_template(
@@ -612,6 +608,21 @@ def update_attendance_balance():
         return jsonify({"error": str(exc)}), 400
 
 
+@app.route("/api/attendance/employee", methods=["POST"])
+@admin_required
+def update_attendance_employee():
+    require_json_csrf()
+    body = request.get_json() or {}
+    try:
+        result = set_employee_profile(
+            (body.get("employee_key") or "").strip(), body.get("role"),
+            body.get("employment_status"), session["user"]["email"],
+        )
+        return jsonify({"success": True, **result})
+    except (TypeError, ValueError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @app.route("/shopify/performance.xlsx")
 @permission_required("shopify.view")
 def download_shopify_performance():
@@ -631,9 +642,10 @@ def download_shopify_performance():
 def download_shopify_week_end():
     selection = selected_reporting_period("monthly")
     source_period, anchor = selection["period"], selection["anchor"]
-    report_period = "weekly_year" if source_period == "yearly" else "weekly"
-    report = shopify_sales_report(report_period, anchor, request.args.get("agent", "").strip())
-    label = str(anchor.year) if source_period == "yearly" else anchor.strftime("%Y-%m")
+    if source_period != "yearly":
+        abort(404)
+    report = shopify_sales_report("weekly_year", anchor, request.args.get("agent", "").strip())
+    label = str(anchor.year)
     return send_file(
         performance_excel(report), as_attachment=True,
         download_name=f"shopify-week-end-report-{label}.xlsx",

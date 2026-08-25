@@ -97,6 +97,187 @@
   margin-bottom: 30px;
 }
 
+.sales-growth-panel {
+  background: linear-gradient(145deg, #fbfcf8 0%, #f1f6ef 100%);
+  margin-bottom: 30px;
+  overflow: hidden;
+}
+
+.growth-panel-head {
+  align-items: flex-start;
+}
+
+.growth-panel-head .panel-description {
+  color: #75857d;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+.growth-change {
+  background: #e2f2e6;
+  border-radius: 999px;
+  color: #287248;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 12px;
+  white-space: nowrap;
+}
+
+.growth-change.negative {
+  background: #f9e7e3;
+  color: #ad4c3c;
+}
+
+.growth-chart-shell {
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid #e2e9e1;
+  border-radius: 18px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .9);
+  padding: 14px 18px 10px;
+}
+
+.growth-plot {
+  height: 210px;
+  position: relative;
+}
+
+.growth-chart {
+  display: block;
+  height: 100%;
+  overflow: visible;
+  width: 100%;
+}
+
+.growth-grid-line {
+  stroke: #dfe8e1;
+  stroke-width: .45;
+}
+
+.growth-line {
+  fill: none;
+  stroke: #1e674f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.growth-point {
+  appearance: none;
+  background: #d9ef78;
+  border: 2px solid #16483a;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(217, 239, 120, .22), 0 5px 14px rgba(18, 63, 51, .16);
+  cursor: default;
+  fill: #d9ef78;
+  height: 12px;
+  left: var(--point-x);
+  padding: 0;
+  position: absolute;
+  top: var(--point-y);
+  transform: translate(-50%, -50%);
+  transition: transform .18s ease, box-shadow .18s ease, background .18s ease;
+  width: 12px;
+  z-index: 2;
+}
+
+.growth-point:hover,
+.growth-point:focus-visible {
+  background: #f0ff9f;
+  box-shadow: 0 0 0 6px rgba(217, 239, 120, .28), 0 8px 22px rgba(18, 63, 51, .22);
+  outline: none;
+  transform: translate(-50%, -50%) scale(1.2);
+  z-index: 4;
+}
+
+.growth-tooltip {
+  background: #123f33;
+  border: 1px solid rgba(255, 255, 255, .16);
+  border-radius: 12px;
+  bottom: 21px;
+  box-shadow: 0 12px 28px rgba(10, 40, 32, .24);
+  color: #fff;
+  display: grid;
+  gap: 3px;
+  left: 50%;
+  min-width: 132px;
+  opacity: 0;
+  padding: 9px 11px;
+  pointer-events: none;
+  position: absolute;
+  text-align: left;
+  transform: translate(-50%, 6px) scale(.96);
+  transition: opacity .16s ease, transform .16s ease;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.growth-tooltip::after {
+  border: 6px solid transparent;
+  border-top-color: #123f33;
+  content: "";
+  left: 50%;
+  position: absolute;
+  top: 100%;
+  transform: translateX(-50%);
+}
+
+.growth-point:hover .growth-tooltip,
+.growth-point:focus-visible .growth-tooltip {
+  opacity: 1;
+  transform: translate(-50%, 0) scale(1);
+  visibility: visible;
+}
+
+.growth-tooltip b {
+  color: #c9d8d1;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.growth-tooltip strong {
+  color: #fff;
+  font-size: 14px;
+}
+
+.growth-tooltip small {
+  color: #d8ef78;
+  font-size: 9px;
+}
+
+.growth-tooltip small.negative {
+  color: #ffb6a8;
+}
+
+.growth-axis,
+.growth-summary {
+  color: #74837c;
+  display: flex;
+  font-size: 11px;
+  justify-content: space-between;
+}
+
+.growth-axis span {
+  flex: 1;
+  text-align: center;
+}
+
+.growth-axis span:first-child { text-align: left; }
+.growth-axis span:last-child { text-align: right; }
+
+.growth-summary {
+  font-size: 12px;
+  justify-content: flex-end;
+  gap: 24px;
+  margin-top: 12px;
+}
+
+.growth-summary strong {
+  color: #173c31;
+  margin-left: 5px;
+}
+
 .week-end-report-panel {
   border-top: 3px solid #d7ef78;
 }
@@ -148,9 +329,29 @@
   margin-top: 3px;
 }
 
-.team-total-row td,
-.team-total-row td:first-child {
-  background: #eaf2e7;
+.sales-matrix .team-total-row td,
+.sales-matrix .team-total-row td:first-child {
+  background: linear-gradient(135deg, #fbfce9 0%, #f0f6d7 100%);
+  border-bottom-color: #d7e39d;
+  border-top-color: #d7e39d;
+  box-shadow: inset 0 1px rgba(255, 255, 255, .92), inset 0 -1px rgba(172, 190, 90, .2);
+  color: #365044;
+  font-weight: 750;
+}
+
+.sales-matrix .team-total-row td:first-child {
+  border-left: 6px solid #c4e54d;
+  color: #123f33;
+}
+
+.sales-matrix .team-total-row td strong {
+  color: #123f33;
+  font-weight: 850;
+}
+
+.sales-matrix .team-total-row td small,
+.sales-matrix .team-total-row .cell-target {
+  color: #5d756a;
 }
 
 .sales-matrix tr.top-performer td {

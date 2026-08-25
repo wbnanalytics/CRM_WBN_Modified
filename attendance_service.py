@@ -31,6 +31,8 @@ PLANNED_CODES = {"PL", "MAT", "PAT", "CO", "FL", "HD-PL"}
 UNPLANNED_CODES = {"A", "UPL", "SL", "BL", "UL"}
 NON_WORKING_CODES = {"WO", "PH", "RH", "NA"}
 PL_DEDUCTION_CODES = {"PL", "UPL", "MAT", "PAT", "CO", "FL", "PH", "BL"}
+EMPLOYEE_ROLES = {"CS", "SALES", "NUTRITIONISTS"}
+EMPLOYMENT_STATUSES = {"Active", "Inactive"}
 
 
 def leave_deduction(code):
@@ -155,6 +157,26 @@ def set_leave_balance(employee, pl_balance, sl_balance, updated_by):
             "updated_by": updated_by, "updated_at": now}
 
 
+def set_employee_profile(employee, role, employment_status, updated_by):
+    role = (role or "").strip().upper()
+    employment_status = (employment_status or "").strip().title()
+    if role not in EMPLOYEE_ROLES:
+        raise ValueError("Role must be CS, SALES or NUTRITIONISTS")
+    if employment_status not in EMPLOYMENT_STATUSES:
+        raise ValueError("Status must be Active or Inactive")
+    now = utc_now()
+    with db_connection() as db:
+        updated = db.execute(
+            """UPDATE attendance_employees
+               SET role=?, employment_status=?, updated_at=? WHERE employee_key=?""",
+            (role, employment_status, now, employee),
+        ).rowcount
+        if not updated:
+            raise ValueError("Employee not found")
+    return {"employee_key": employee, "role": role, "employment_status": employment_status,
+            "updated_by": updated_by, "updated_at": now}
+
+
 def attendance_month(anchor, today=None):
     today = today or date.today()
     start = date(anchor.year, anchor.month, 1)
@@ -221,7 +243,7 @@ def attendance_month(anchor, today=None):
     return {
         "start": start, "end": end, "dates": dates, "employees": employees, "daily": daily,
         "totals": totals, "latest_import": latest_import, "last_updated": latest_update,
-        "status_labels": STATUS_LABELS,
+        "status_labels": STATUS_LABELS, "employee_roles": tuple(sorted(EMPLOYEE_ROLES)),
     }
 
 

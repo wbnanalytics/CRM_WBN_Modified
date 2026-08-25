@@ -247,20 +247,17 @@ def _period_columns(period, anchor):
         columns = [{"key": anchor.isoformat(), "label": anchor.strftime("%d %b %Y"), "start": anchor, "end": anchor}]
         default_target_divisor = 5.5
     elif period == "weekly":
-        month_start = date(anchor.year, anchor.month, 1)
-        month_end = date(anchor.year, anchor.month, monthrange(anchor.year, anchor.month)[1])
-        first_friday = month_start + timedelta(days=(4 - month_start.weekday()) % 7)
-        last_friday = month_end - timedelta(days=(month_end.weekday() - 4) % 7)
+        week_end = anchor + timedelta(days=(4 - anchor.weekday()) % 7)
+        start, end = week_end - timedelta(days=6), week_end
         columns = []
-        week_end = first_friday
-        while week_end <= last_friday:
+        cursor = start
+        while cursor <= end:
             columns.append({
-                "key": week_end.isoformat(), "label": f"WE {week_end.strftime('%d %b').upper()}",
-                "start": week_end - timedelta(days=6), "end": week_end,
+                "key": cursor.isoformat(), "label": cursor.strftime("%a %d %b").upper(),
+                "start": cursor, "end": cursor,
             })
-            week_end += timedelta(days=7)
-        start, end = columns[0]["start"], columns[-1]["end"]
-        default_target_divisor = 1
+            cursor += timedelta(days=1)
+        default_target_divisor = 7
     elif period == "weekly_year":
         year_start, year_end = date(anchor.year, 1, 1), date(anchor.year, 12, 31)
         first_friday = year_start + timedelta(days=(4 - year_start.weekday()) % 7)
@@ -368,7 +365,13 @@ def sales_report(period="daily", anchor=None, employee_key=""):
             order_values.append(orders)
         weekly_target = float(employee.get("weekly_target") or 0)
         period_target = weekly_target / target_divisor if target_divisor else weekly_target * 4
-        if period in {"weekly", "weekly_year"}:
+        if period == "weekly":
+            weekly_total_target = overrides.get(
+                (employee["employee_key"], date(end.year, end.month, 1).isoformat()),
+                weekly_target,
+            )
+            targets = [weekly_total_target / len(columns) for _ in columns]
+        elif period == "weekly_year":
             targets = [overrides.get(
                 (employee["employee_key"], date(column["end"].year, column["end"].month, 1).isoformat()),
                 period_target,
@@ -409,6 +412,36 @@ def sales_report(period="daily", anchor=None, employee_key=""):
     team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
     team_targets = [sum(row["targets"][i] for row in team_rows) for i in range(len(columns))]
     team_target = sum(row["total_target"] for row in team_rows)
+    today = datetime.now(IST).date()
+    growth_source = [
+        (column["label"], value)
+        for column, value in zip(columns, team_values)
+        if column["start"] <= today
+    ]
+    growth_max = max((value for _, value in growth_source), default=0) or 1
+    growth_points = []
+    for index, (label, value) in enumerate(growth_source):
+        x = 4 if len(growth_source) == 1 else 4 + (index * 92 / (len(growth_source) - 1))
+        y = 92 - (value / growth_max * 76)
+        previous_value = growth_source[index - 1][1] if index else None
+        point_change = (
+            (value - previous_value) / previous_value
+            if previous_value
+            else None
+        )
+        growth_points.append({
+            "label": label,
+            "value": value,
+            "x": round(x, 2),
+            "y": round(y, 2),
+            "change": point_change,
+        })
+    growth_current = growth_points[-1]["value"] if growth_points else 0
+    growth_previous = growth_points[-2]["value"] if len(growth_points) > 1 else 0
+    growth_change = (
+        (growth_current - growth_previous) / growth_previous
+        if growth_previous else None
+    )
     product_summary = defaultdict(lambda: {"sales": 0.0, "orders": 0})
     for item in product_sales:
         if selected_employee and item["employee_key"] != employee_key:
@@ -429,6 +462,13 @@ def sales_report(period="daily", anchor=None, employee_key=""):
         "product_rows": product_rows,
         "available_employees": available_employees,
         "selected_employee": selected_employee,
+        "growth": {
+            "points": growth_points,
+            "polyline": " ".join(f'{point["x"]},{point["y"]}' for point in growth_points),
+            "current": growth_current,
+            "previous": growth_previous,
+            "change": growth_change,
+        },
         "team": {
             "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),

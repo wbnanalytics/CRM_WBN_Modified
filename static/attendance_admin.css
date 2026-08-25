@@ -1,0 +1,22 @@
+@media (min-width: 901px) {
+  .attendance-table .sticky-state { left: 398px; width: 96px; min-width: 96px; }
+  .attendance-table .sticky-pl { left: 494px; }
+  .attendance-table .sticky-sl { left: 568px; }
+}
+
+.employee-profile-select {
+  width: 100%;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid #d8e0d8;
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink);
+  cursor: pointer;
+  font: 700 9px "DM Sans", sans-serif;
+}
+
+.employee-profile-select:focus { outline: 2px solid var(--forest); outline-offset: 1px; }
+.employee-profile-select.saving { opacity: .55; cursor: wait; }
+.employment-status-select { appearance: auto; padding: 0 4px; text-align: center; }
+.employee-role-select { max-width: 150px; }
