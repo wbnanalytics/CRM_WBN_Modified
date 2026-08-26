@@ -33,7 +33,10 @@ def main():
             ("zoho", lambda: sync_zoho(day, day)),
             ("bik_customer_tickets", lambda: with_retries(sync_bik, "customer_tickets", day, day)),
             ("bik_conversations", lambda: with_retries(sync_bik, "all_conversations", day, day)),
-            ("shopify", lambda: sync_shopify(today - timedelta(days=44), today)),
+            ("shopify", lambda: sync_shopify(
+                today - timedelta(days=44), today,
+                order_detail_start=today - timedelta(days=6),
+            )),
         )
         for name, operation in operations:
             try:

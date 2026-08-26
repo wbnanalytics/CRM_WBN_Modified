@@ -227,27 +227,24 @@ def _shopify_orders(token, start, end):
 
 
 def _shopify_order_attribution(token, start, end):
-    rows = []
-    cursor = start
-    while cursor <= end:
-        query = f"""FROM sales
+    query = f"""FROM sales
 SHOW total_sales, gross_sales, discounts, orders
 GROUP BY staff_member_name, order_id, order_name
-SINCE {cursor.isoformat()} UNTIL {cursor.isoformat()}
+SINCE {start.isoformat()} UNTIL {end.isoformat()}
 ORDER BY staff_member_name ASC, order_id ASC"""
-        for row in _shopifyql_all(token, query):
-            source_name = str(row.get("staff_member_name") or "").strip()
-            if not source_name:
-                continue
-            employee_key, _display_name = _employee_identity(source_name)
-            if employee_key:
-                rows.append({
-                    "employee_key": employee_key,
-                    "source_employee_name": source_name,
-                    "order_number": str(row.get("order_id") or ""),
-                    "order_name": str(row.get("order_name") or ""),
-                })
-        cursor += timedelta(days=1)
+    rows = []
+    for row in _shopifyql_all(token, query):
+        source_name = str(row.get("staff_member_name") or "").strip()
+        if not source_name:
+            continue
+        employee_key, _display_name = _employee_identity(source_name)
+        if employee_key:
+            rows.append({
+                "employee_key": employee_key,
+                "source_employee_name": source_name,
+                "order_number": str(row.get("order_id") or ""),
+                "order_name": str(row.get("order_name") or ""),
+            })
     return rows
 
 
@@ -269,9 +266,12 @@ def _month_chunks(start, end):
         cursor = chunk_end + timedelta(days=1)
 
 
-def sync_shopify(start_date, end_date):
+def sync_shopify(start_date, end_date, order_detail_start=None):
     start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
     end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    order_detail_start = (
+        date.fromisoformat(order_detail_start) if isinstance(order_detail_start, str) else order_detail_start
+    )
     if start > end:
         raise ValueError("Start date must not be after end date")
     if not shopify_configured():
@@ -361,8 +361,11 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                 "quantity_sold": item["quantity_sold"],
             } for (day, employee_key, title, sku), item in product_combined.items()]
             replace_shopify_product_sales(chunk_start.isoformat(), chunk_end.isoformat(), product_rows)
-            order_rows = _shopify_orders(token, chunk_start, chunk_end)
-            attribution_rows = _shopify_order_attribution(token, chunk_start, chunk_end)
+            order_start = max(chunk_start, order_detail_start) if order_detail_start else chunk_start
+            if order_start > chunk_end:
+                continue
+            order_rows = _shopify_orders(token, order_start, chunk_end)
+            attribution_rows = _shopify_order_attribution(token, order_start, chunk_end)
             attribution_by_number = {row["order_number"]: row for row in attribution_rows if row["order_number"]}
             attribution_by_name = {row["order_name"]: row for row in attribution_rows if row["order_name"]}
             for order in order_rows:
@@ -371,12 +374,12 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                     order["employee_key"] = attribution["employee_key"]
                     order["source_employee_name"] = attribution["source_employee_name"]
             received += len(order_rows)
-            previous_orders = shopify_orders_between(chunk_start.isoformat(), chunk_end.isoformat())
+            previous_orders = shopify_orders_between(order_start.isoformat(), chunk_end.isoformat())
             if previous_orders and not order_rows:
                 raise ShopifyError(
-                    f"Shopify returned an empty order snapshot for {chunk_start} to {chunk_end}; existing order data was preserved"
+                    f"Shopify returned an empty order snapshot for {order_start} to {chunk_end}; existing order data was preserved"
                 )
-            saved += replace_shopify_order_details(chunk_start.isoformat(), chunk_end.isoformat(), order_rows)
+            saved += replace_shopify_order_details(order_start.isoformat(), chunk_end.isoformat(), order_rows)
         finish_sync_run(run_id, "success", received, saved)
         return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
     except Exception as exc:
