@@ -78,7 +78,7 @@ grant_permission_to_all_users("shopify.view", "system-default")
 
 ATTENDANCE_BUSINESS_ROLES = {
     **{name.casefold(): "Sales" for name in (
-        "Babita Bagdi", "Kajol Rajput", "Akash Varma", "Eeshika Poojari", "Rachana Rathod",
+        "Babita Bagdi", "Kajol Rajput", "Akash Varma", "Eeshika Pujari", "Rachana Rathod",
         "Shubh Pajwani", "Akshay Shah", "Shahnawaz Ansari", "Ajay Cynthala", "Yusuf Shaikh",
         "Komal Mohite", "Arnav Purohit",
     )},
