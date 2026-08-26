@@ -163,22 +163,27 @@ def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key
                            payment_type="", financial_status="", search=""):
     book = Workbook()
     summary = book.active
-    summary.title = "Daily Employee Data"
+    summary.title = "Employee Day Orders"
     summary.append(["WELLBEING NUTRITION — SHOPIFY UNDERLYING SALES DATA"])
-    summary.merge_cells("A1:K1")
+    summary.merge_cells("A1:Q1")
     summary["A1"].fill = PatternFill("solid", fgColor=FOREST)
     summary["A1"].font = Font(color="FFFFFF", bold=True, size=14)
     summary.append(["From", start, "To", end, "Employee filter", employee_key or "All employees"])
     summary.append([])
-    summary.append(["Date", "Employee Key", "Employee", "Raw Shopify Employee", "Role", "MRP", "Discount", "Selling Price", "Orders", "Discount %", "Synced At"])
+    summary.append(["Date", "Employee Key", "Employee", "Raw Shopify Employee", "Role", "Order ID", "Shopify Numeric ID", "Customer Name", "Customer Email", "Customer Phone", "Payment Type", "Payment Gateway", "Payment Status", "MRP", "Discount", "Selling Price", "Synced At"])
     for cell in summary[4]:
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
-    for row in employee_rows:
-        discount = abs(float(row.get("discounts") or 0))
-        selling = float(row.get("total_sales") or 0)
-        mrp = selling + discount
-        summary.append([row.get("day"), row.get("employee_key"), row.get("display_name"), row.get("source_employee_name"), row.get("role"), mrp, discount, selling, int(row.get("order_count") or 0), discount / mrp if mrp else 0, row.get("synced_at")])
+    for row in order_rows or []:
+        selling = float(row.get("total_price") or 0)
+        discount = float(row.get("total_discounts") or 0)
+        summary.append([
+            row.get("local_date"), row.get("employee_key"), row.get("display_name"),
+            row.get("source_employee_name"), row.get("role"), row.get("order_name"),
+            row.get("order_number"), row.get("customer_name"), row.get("customer_email"),
+            row.get("customer_phone"), row.get("payment_type"), row.get("payment_gateways"),
+            row.get("financial_status"), selling + discount, discount, selling, row.get("synced_at"),
+        ])
     product = book.create_sheet("Product by Employee")
     product.append(["Date", "Employee Key", "Employee", "Raw Shopify Employee", "Role", "Product", "SKU", "Quantity", "MRP", "Discount", "Selling Price", "Orders", "Discount %", "Synced At"])
     for cell in product[1]:
@@ -215,11 +220,9 @@ def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key
         sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
         for column in sheet.columns:
             sheet.column_dimensions[get_column_letter(column[0].column)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 34)
-    for row in summary.iter_rows(min_row=5, min_col=6, max_col=8):
+    for row in summary.iter_rows(min_row=5, min_col=14, max_col=16):
         for cell in row:
             cell.number_format = '₹#,##0.00'
-    for cell in summary["J"][4:]:
-        cell.number_format = "0.0%"
     for row in product.iter_rows(min_row=2, min_col=9, max_col=11):
         for cell in row:
             cell.number_format = '₹#,##0.00'

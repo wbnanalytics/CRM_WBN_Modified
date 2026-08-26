@@ -516,11 +516,11 @@ def _shopify_underlying_rows(selection, employee_key="", payment_type="", financ
     order_rows = shopify_orders_between(
         selection["start"].isoformat(), selection["end"].isoformat(),
         payment_type=payment_type, financial_status=financial_status, search=search,
+        employee_key=employee_key,
     )
     if employee_key:
         employee_rows = [row for row in employee_rows if row["employee_key"] == employee_key]
         product_rows = [row for row in product_rows if row["employee_key"] == employee_key]
-        order_rows = []  # Shopify restricts order-to-staff attribution without read_users scope.
     if search:
         token = search.casefold()
         employee_rows = [row for row in employee_rows if token in " ".join(str(row.get(key) or "") for key in ("day", "display_name", "source_employee_name", "role")).casefold()]
@@ -540,14 +540,10 @@ def sales_dashboard_details():
         selection, employee_key, payment_type, financial_status, search,
     )
     detail = request.args.get("detail", "employee")
-    if detail not in {"employee", "product", "orders"}:
-        abort(400)
     if detail == "orders":
-        return render_template(
-            "sales_orders.html", active_page="dashboard", page_title="Shopify order underlying data",
-            selection=selection, order_rows=order_rows, employee_key=employee_key,
-            payment_type=payment_type, financial_status=financial_status, search=search,
-        )
+        detail = "employee"
+    if detail not in {"employee", "product"}:
+        abort(400)
     return render_template(
         "sales_details.html", active_page="dashboard", page_title="Sales underlying data",
         selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows, order_rows=order_rows,

@@ -189,6 +189,8 @@ def init_db():
                 total_discounts REAL NOT NULL DEFAULT 0,
                 currency_code TEXT,
                 source_name TEXT,
+                employee_key TEXT,
+                source_employee_name TEXT,
                 synced_at TEXT NOT NULL
             );
 
@@ -464,6 +466,13 @@ def init_db():
             db.execute("ALTER TABLE shopify_product_sales_daily ADD COLUMN gross_sales REAL NOT NULL DEFAULT 0")
         if "discounts" not in product_sales_columns:
             db.execute("ALTER TABLE shopify_product_sales_daily ADD COLUMN discounts REAL NOT NULL DEFAULT 0")
+        order_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(shopify_order_details)").fetchall()
+        }
+        if "employee_key" not in order_columns:
+            db.execute("ALTER TABLE shopify_order_details ADD COLUMN employee_key TEXT")
+        if "source_employee_name" not in order_columns:
+            db.execute("ALTER TABLE shopify_order_details ADD COLUMN source_employee_name TEXT")
         portal_user_columns = {
             row["name"] for row in db.execute("PRAGMA table_info(portal_users)").fetchall()
         }
@@ -849,8 +858,8 @@ def replace_shopify_order_details(start_date, end_date, rows):
                (order_id, order_name, order_number, created_at, local_date,
                 customer_name, customer_email, customer_phone, payment_type,
                 payment_gateways, financial_status, total_price, total_discounts,
-                currency_code, source_name, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                currency_code, source_name, employee_key, source_employee_name, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(order_id) DO UPDATE SET
                  order_name=excluded.order_name, order_number=excluded.order_number,
                  created_at=excluded.created_at, local_date=excluded.local_date,
@@ -859,39 +868,61 @@ def replace_shopify_order_details(start_date, end_date, rows):
                  payment_gateways=excluded.payment_gateways, financial_status=excluded.financial_status,
                  total_price=excluded.total_price, total_discounts=excluded.total_discounts,
                  currency_code=excluded.currency_code, source_name=excluded.source_name,
+                 employee_key=excluded.employee_key, source_employee_name=excluded.source_employee_name,
                  synced_at=excluded.synced_at""",
             [(
                 row["order_id"], row["order_name"], row.get("order_number"), row["created_at"], row["local_date"],
                 row.get("customer_name"), row.get("customer_email"), row.get("customer_phone"),
                 row.get("payment_type") or "Other", row.get("payment_gateways"), row.get("financial_status"),
                 float(row.get("total_price") or 0), float(row.get("total_discounts") or 0),
-                row.get("currency_code"), row.get("source_name"), now,
+                row.get("currency_code"), row.get("source_name"), row.get("employee_key"),
+                row.get("source_employee_name"), now,
             ) for row in rows],
         )
     return len(rows)
 
 
-def shopify_orders_between(start_date, end_date, payment_type="", financial_status="", search=""):
-    clauses = ["local_date BETWEEN ? AND ?"]
+def apply_shopify_order_attribution(rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.executemany(
+            """UPDATE shopify_order_details
+               SET employee_key=?, source_employee_name=?, synced_at=?
+               WHERE order_number=? OR order_name=?""",
+            [(row["employee_key"], row["source_employee_name"], now,
+              str(row.get("order_number") or ""), str(row.get("order_name") or "")) for row in rows],
+        )
+    return len(rows)
+
+
+def shopify_orders_between(start_date, end_date, payment_type="", financial_status="", search="", employee_key=""):
+    clauses = ["o.local_date BETWEEN ? AND ?"]
     params = [start_date, end_date]
     if payment_type:
-        clauses.append("payment_type = ?")
+        clauses.append("o.payment_type = ?")
         params.append(payment_type)
     if financial_status:
-        clauses.append("financial_status = ?")
+        clauses.append("o.financial_status = ?")
         params.append(financial_status)
     if search:
         token = f"%{search.strip()}%"
-        clauses.append("(order_name LIKE ? OR order_number LIKE ? OR customer_name LIKE ? OR customer_email LIKE ? OR customer_phone LIKE ? OR payment_gateways LIKE ?)")
-        params.extend([token] * 6)
+        clauses.append("(o.order_name LIKE ? OR o.order_number LIKE ? OR o.customer_name LIKE ? OR o.customer_email LIKE ? OR o.customer_phone LIKE ? OR o.payment_gateways LIKE ? OR o.source_employee_name LIKE ? OR c.display_name LIKE ?)")
+        params.extend([token] * 8)
+    if employee_key:
+        clauses.append("o.employee_key = ?")
+        params.append(employee_key)
     with db_connection() as db:
         rows = db.execute(
-            f"""SELECT order_id, order_name, order_number, created_at, local_date,
-                       customer_name, customer_email, customer_phone, payment_type,
-                       payment_gateways, financial_status, total_price, total_discounts,
-                       currency_code, source_name, synced_at
-                FROM shopify_order_details WHERE {' AND '.join(clauses)}
-                ORDER BY created_at DESC, order_name DESC""",
+            f"""SELECT o.order_id, o.order_name, o.order_number, o.created_at, o.local_date,
+                       o.customer_name, o.customer_email, o.customer_phone, o.payment_type,
+                       o.payment_gateways, o.financial_status, o.total_price, o.total_discounts,
+                       o.currency_code, o.source_name, o.employee_key, o.source_employee_name,
+                       COALESCE(c.display_name, o.source_employee_name, 'Unassigned') AS display_name,
+                       COALESCE(c.role, 'Unassigned') AS role, o.synced_at
+                FROM shopify_order_details o
+                LEFT JOIN shopify_employee_config c ON c.employee_key=o.employee_key
+                WHERE {' AND '.join(clauses)}
+                ORDER BY o.created_at DESC, o.order_name DESC""",
             params,
         ).fetchall()
     return [dict(row) for row in rows]

@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 from database import (
+    apply_shopify_order_attribution,
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
     replace_shopify_order_details, replace_shopify_product_sales, replace_shopify_sales,
     seed_shopify_employees, shopify_orders_between, shopify_product_sales_between, shopify_sales_between,
@@ -225,6 +226,41 @@ def _shopify_orders(token, start, end):
         after = page_info["endCursor"]
 
 
+def _shopify_order_attribution(token, start, end):
+    rows = []
+    cursor = start
+    while cursor <= end:
+        query = f"""FROM sales
+SHOW total_sales, gross_sales, discounts, orders
+GROUP BY staff_member_name, order_id, order_name
+SINCE {cursor.isoformat()} UNTIL {cursor.isoformat()}
+ORDER BY staff_member_name ASC, order_id ASC"""
+        for row in _shopifyql_all(token, query):
+            source_name = str(row.get("staff_member_name") or "").strip()
+            if not source_name:
+                continue
+            employee_key, _display_name = _employee_identity(source_name)
+            if employee_key:
+                rows.append({
+                    "employee_key": employee_key,
+                    "source_employee_name": source_name,
+                    "order_number": str(row.get("order_id") or ""),
+                    "order_name": str(row.get("order_name") or ""),
+                })
+        cursor += timedelta(days=1)
+    return rows
+
+
+def sync_shopify_order_attribution(start_date, end_date):
+    start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+    end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    if start > end:
+        raise ValueError("Start date must not be after end date")
+    token = _access_token()
+    rows = _shopify_order_attribution(token, start, end)
+    return apply_shopify_order_attribution(rows)
+
+
 def _month_chunks(start, end):
     cursor = start
     while cursor <= end:
@@ -326,6 +362,14 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
             } for (day, employee_key, title, sku), item in product_combined.items()]
             replace_shopify_product_sales(chunk_start.isoformat(), chunk_end.isoformat(), product_rows)
             order_rows = _shopify_orders(token, chunk_start, chunk_end)
+            attribution_rows = _shopify_order_attribution(token, chunk_start, chunk_end)
+            attribution_by_number = {row["order_number"]: row for row in attribution_rows if row["order_number"]}
+            attribution_by_name = {row["order_name"]: row for row in attribution_rows if row["order_name"]}
+            for order in order_rows:
+                attribution = attribution_by_number.get(order["order_number"]) or attribution_by_name.get(order["order_name"])
+                if attribution:
+                    order["employee_key"] = attribution["employee_key"]
+                    order["source_employee_name"] = attribution["source_employee_name"]
             received += len(order_rows)
             previous_orders = shopify_orders_between(chunk_start.isoformat(), chunk_end.isoformat())
             if previous_orders and not order_rows:
