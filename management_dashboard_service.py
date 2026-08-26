@@ -5,7 +5,50 @@ rows used by the operational Shopify and CS reports so dashboard totals always
 reconcile to their underlying report.
 """
 
+import math
 from collections import defaultdict
+
+
+def _compact_number(value):
+    value = float(value or 0)
+    if value >= 10_000_000:
+        return f"{value / 10_000_000:.1f}Cr"
+    if value >= 100_000:
+        return f"{value / 100_000:.1f}L"
+    if value >= 1_000:
+        return f"{value / 1_000:.0f}K"
+    return f"{value:.0f}"
+
+
+def _sales_discount_chart(trend):
+    """Build responsive SVG coordinates for bars plus a percentage line."""
+    count = len(trend)
+    chart_width = max(760, count * 48 + 140)
+    left, right, top, bottom = 70, chart_width - 70, 28, 286
+    plot_width, plot_height = right - left, bottom - top
+    sales_peak = max((row["sales"] for row in trend), default=0)
+    sales_step = max(1, math.ceil((sales_peak / 5) / 100_000) * 100_000)
+    sales_max = sales_step * 5
+    rate_peak = max((row["discount_rate"] for row in trend), default=0)
+    rate_max = max(5, math.ceil(rate_peak / 5) * 5)
+    slot = plot_width / max(count, 1)
+    bar_width = min(26, max(10, slot * 0.52))
+    points = []
+    for index, row in enumerate(trend):
+        x = left + slot * (index + 0.5)
+        bar_height = row["sales"] / sales_max * plot_height if sales_max else 0
+        line_y = bottom - (row["discount_rate"] / rate_max * plot_height if rate_max else 0)
+        points.append({
+            **row, "x": x, "bar_x": x - bar_width / 2, "bar_y": bottom - bar_height,
+            "bar_height": bar_height, "line_y": line_y,
+        })
+    return {
+        "width": chart_width, "height": 350, "left": left, "right": right,
+        "top": top, "bottom": bottom, "bar_width": bar_width, "points": points,
+        "line_points": " ".join(f'{row["x"]:.2f},{row["line_y"]:.2f}' for row in points),
+        "sales_ticks": [{"y": bottom - plot_height * i / 5, "label": _compact_number(sales_step * i)} for i in range(6)],
+        "rate_ticks": [{"y": bottom - plot_height * i / 5, "label": f"{rate_max * i / 5:.0f}%"} for i in range(6)],
+    }
 
 
 def _business_group(role, name=""):
@@ -82,7 +125,11 @@ def sales_management(report):
     for index, column in enumerate(report.get("columns", [])):
         sales_value = sum(float(row.get("values", [0])[index] or 0) for row in report.get("rows", []) if row.get("include_in_team"))
         discount_value = sum(abs(float(row.get("discount_values", [0])[index] or 0)) for row in report.get("rows", []) if row.get("include_in_team"))
-        trend.append({"label": column["label"], "sales": sales_value, "discounts": discount_value, "mrp": sales_value + discount_value})
+        mrp_value = sales_value + discount_value
+        trend.append({
+            "label": column["label"], "sales": sales_value, "discounts": discount_value,
+            "mrp": mrp_value, "discount_rate": discount_value / mrp_value * 100 if mrp_value else 0,
+        })
     trend_max = max((max(row["sales"], row["discounts"]) for row in trend), default=0) or 1
     for row in trend:
         row["sales_pct"] = row["sales"] / trend_max * 100
@@ -95,6 +142,7 @@ def sales_management(report):
         "products": products,
         "product_agents": product_agents,
         "trend": trend,
+        "chart": _sales_discount_chart(trend),
         "discount_available": all_gross_sales > 0,
         "discounts": all_discounts,
         "gross_sales": all_sales + all_discounts,
