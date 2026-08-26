@@ -1,5 +1,6 @@
 import fcntl
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -38,11 +39,16 @@ def main():
                 order_detail_start=today - timedelta(days=6),
             )),
         )
-        for name, operation in operations:
-            try:
-                results[name] = operation()
-            except Exception as exc:
-                errors.append(f"{name}: {exc}")
+        # These sources are independent. Running them together makes the
+        # button wait for the slowest source instead of the sum of all four.
+        with ThreadPoolExecutor(max_workers=len(operations)) as executor:
+            pending = {executor.submit(operation): name for name, operation in operations}
+            for future in as_completed(pending):
+                name = pending[future]
+                try:
+                    results[name] = future.result()
+                except Exception as exc:
+                    errors.append(f"{name}: {exc}")
         if errors:
             finish_sync_request(request["id"], "failed", results, "; ".join(errors)[:2000])
         else:
