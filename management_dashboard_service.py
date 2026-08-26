@@ -66,7 +66,7 @@ def _business_group(role, name=""):
 
 
 def sales_management(report):
-    groups = defaultdict(lambda: {"sales": 0.0, "orders": 0, "people": 0, "discounts": 0.0, "gross_sales": 0.0})
+    groups = defaultdict(lambda: {"sales": 0.0, "orders": 0, "people": 0, "discounts": 0.0, "gross_sales": 0.0, "members": []})
     all_sales = all_orders = all_discounts = all_gross_sales = 0
     for row in report.get("rows", []):
         group = _business_group(row.get("role"), row.get("display_name"))
@@ -79,6 +79,16 @@ def sales_management(report):
         groups[group]["people"] += 1
         groups[group]["discounts"] += discounts
         groups[group]["gross_sales"] += gross_sales
+        groups[group]["members"].append({
+            "name": row.get("display_name") or "Unassigned",
+            "role": row.get("role") or "Unassigned",
+            "sales": sales,
+            "discounts": discounts,
+            "mrp": gross_sales,
+            "discount_rate": discounts / gross_sales * 100 if gross_sales else 0,
+            "orders": orders,
+            "aov": sales / orders if orders else 0,
+        })
         all_sales += sales
         all_orders += orders
         all_discounts += discounts
@@ -88,6 +98,7 @@ def sales_management(report):
     split = []
     for name in order:
         values = groups[name]
+        values["members"].sort(key=lambda row: (-row["sales"], row["name"].casefold()))
         values.update({
             "name": name,
             "aov": values["sales"] / values["orders"] if values["orders"] else 0,
