@@ -16,10 +16,13 @@
 </section>
 
 <section class="shopify-toolbar panel">
-  <div class="report-tabs sales-tabs">
-    {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
-      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, agent=selected_agent) }}">{{ label }}</a>
-    {% endfor %}
+  <div class="shopify-period-control">
+    <span class="toolbar-label">Reporting period</span>
+    <div class="report-tabs sales-tabs">
+      {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
+        <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, agent=selected_agent) }}">{{ label }}</a>
+      {% endfor %}
+    </div>
   </div>
   <form method="get" class="sales-period-form">
     <input type="hidden" name="period" value="{{ period }}">

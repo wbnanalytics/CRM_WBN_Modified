@@ -40,14 +40,21 @@
 }
 
 .shopify-toolbar {
+  align-items: end;
+  display: grid;
+  grid-template-columns: minmax(430px, auto) minmax(560px, 1fr);
   justify-content: space-between;
-  gap: 24px;
+  gap: 32px;
   margin-bottom: 24px;
-  padding: 16px 20px;
+  padding: 18px 22px;
 }
+
+.shopify-period-control { display: grid; gap: 7px; }
+.toolbar-label { color:#718078; font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 
 .sales-tabs {
   gap: 8px;
+  margin: 0;
 }
 
 .sales-tabs a {
@@ -55,7 +62,12 @@
   border-radius: 12px;
   color: #607068;
   font-weight: 700;
-  padding: 10px 18px;
+  align-items:center;
+  display:flex;
+  justify-content:center;
+  min-height:44px;
+  min-width:96px;
+  padding: 0 18px;
   text-decoration: none;
 }
 
@@ -66,7 +78,9 @@
 }
 
 .sales-period-form {
+  align-items:end;
   gap: 10px;
+  justify-content:end;
 }
 
 .sales-period-form label {
@@ -92,6 +106,8 @@
   min-height: 42px;
   padding: 0 12px;
 }
+
+.sales-period-form .filter-button,.sales-period-form .reset-filter{align-items:center;display:inline-flex;justify-content:center;min-height:44px;white-space:nowrap}
 
 .sales-report-panel {
   margin-bottom: 30px;
@@ -781,6 +797,8 @@
     align-items: stretch;
     flex-direction: column;
   }
+
+  .shopify-toolbar { display:flex; }
 
   .sync-control {
     align-items: stretch;
