@@ -516,7 +516,7 @@ def _shopify_underlying_rows(selection, employee_key="", payment_type="", financ
     order_rows = shopify_orders_between(
         selection["start"].isoformat(), selection["end"].isoformat(),
         payment_type=payment_type, financial_status=financial_status, search=search,
-        employee_key=employee_key,
+        employee_key=employee_key, attributed_only=True,
     )
     if employee_key:
         employee_rows = [row for row in employee_rows if row["employee_key"] == employee_key]

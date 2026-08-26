@@ -895,7 +895,7 @@ def apply_shopify_order_attribution(rows):
     return len(rows)
 
 
-def shopify_orders_between(start_date, end_date, payment_type="", financial_status="", search="", employee_key=""):
+def shopify_orders_between(start_date, end_date, payment_type="", financial_status="", search="", employee_key="", attributed_only=False):
     clauses = ["o.local_date BETWEEN ? AND ?"]
     params = [start_date, end_date]
     if payment_type:
@@ -911,6 +911,8 @@ def shopify_orders_between(start_date, end_date, payment_type="", financial_stat
     if employee_key:
         clauses.append("o.employee_key = ?")
         params.append(employee_key)
+    elif attributed_only:
+        clauses.append("o.employee_key IS NOT NULL")
     with db_connection() as db:
         rows = db.execute(
             f"""SELECT o.order_id, o.order_name, o.order_number, o.created_at, o.local_date,
