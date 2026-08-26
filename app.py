@@ -28,8 +28,13 @@ from shopify_service import sales_report as shopify_sales_report, seed_default_e
 from shopify_targets_io import performance_excel, read_target_upload, sales_underlying_excel, target_template
 from attendance_service import attendance_month, attendance_period, set_attendance, set_employee_profile, set_leave_balance
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
-from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
-from management_dashboard_service import sales_management, cs_management
+from dashboard_export import (
+    attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel,
+    product_comparison_excel, product_report_excel, sales_comparison_excel, sales_trend_excel,
+)
+from management_dashboard_service import sales_management, cs_management, matches_sales_scope, is_crm_admin, product_management
+from loyalty_export import loyalty_comparison_workbook, loyalty_workbook
+from loyalty_service import loyalty_report
 from portal_export import attendance_planner_workbook, source_metrics_workbook, workbook_from_tables
 
 
@@ -274,11 +279,12 @@ def refresh_ticker_data():
         "shopify": "Hourly",
         "zoho": "09:00 / 21:00 IST",
         "bik": "09:00 / 21:00 IST",
+        "uniware": "With manual refresh",
     }
     for row in recent_sync_runs(100):
         latest.setdefault(row["source"], row)
     items = []
-    for key, label in (("shopify", "Shopify"), ("zoho", "Zoho Desk"), ("bik", "BIK")):
+    for key, label in (("shopify", "Shopify"), ("zoho", "Zoho Desk"), ("bik", "BIK"), ("uniware", "Uniware")):
         row = latest.get(key)
         items.append({
             "key": key, "label": label,
@@ -390,6 +396,14 @@ def indian_currency(value):
     return f"{sign}₹{digits}"
 
 
+@app.template_filter("number")
+def indian_number(value):
+    try:
+        return f"{int(value or 0):,}"
+    except (TypeError, ValueError):
+        return str(value or "0")
+
+
 @app.template_filter("ist_datetime")
 def ist_datetime(value):
     if not value:
@@ -483,7 +497,18 @@ def dashboard():
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
     selected_agent = request.args.get("agent", "").strip() if view == "cs" else ""
     cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), selected_agent)
-    sales_management_report = sales_management(report)
+    sales_scope = request.args.get("scope", "overall") if view == "sales" else "overall"
+    if sales_scope not in {"overall", "crm", "nutritionists", "comparison"}:
+        sales_scope = "overall"
+    sales_comparison = None
+    if sales_scope == "comparison":
+        sales_comparison = {
+            key: sales_management(report, key)
+            for key in ("overall", "crm", "nutritionists")
+        }
+        sales_management_report = sales_comparison["overall"]
+    else:
+        sales_management_report = sales_management(report, sales_scope)
     cs_management_report = cs_management(cs_report)
     attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
@@ -492,7 +517,7 @@ def dashboard():
         report=report, sales_management=sales_management_report,
         cs_management=cs_management_report,
         top_performers=top_performers, bottom_performers=bottom_performers,
-        selected_month=selection["month"],
+        selected_month=selection["month"], sales_scope=sales_scope, sales_comparison=sales_comparison,
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
         available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
     )
@@ -510,14 +535,55 @@ def download_cs_dashboard():
     )
 
 
-def _shopify_underlying_rows(selection, employee_key="", payment_type="", financial_status="", search=""):
+@app.route("/dashboard/sales-trend.xlsx")
+@permission_required("dashboard")
+def download_sales_trend():
+    selection = selected_reporting_period("monthly")
+    sales_scope = request.args.get("scope", "overall")
+    if sales_scope not in {"overall", "crm", "nutritionists"}:
+        sales_scope = "overall"
+    report = shopify_sales_report(selection["period"], selection["anchor"])
+    management = sales_management(report, sales_scope)
+    trend = management["trend"]
+    return send_file(
+        sales_trend_excel(
+            trend, selection, sales_scope,
+            management["comparison"]["overall_trend"] if management["comparison"] else None,
+        ), as_attachment=True,
+        download_name=f"sales-discount-trend-{sales_scope}-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/dashboard/sales-comparison.xlsx")
+@permission_required("dashboard")
+def download_sales_comparison():
+    selection = selected_reporting_period("monthly")
+    report = shopify_sales_report(selection["period"], selection["anchor"])
+    comparison = {
+        key: sales_management(report, key)
+        for key in ("overall", "crm", "nutritionists")
+    }
+    return send_file(
+        sales_comparison_excel(comparison, selection), as_attachment=True,
+        download_name=f"sales-comparison-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _shopify_underlying_rows(selection, employee_key="", payment_type="", financial_status="", search="", sales_scope="overall"):
     employee_rows = shopify_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
     product_rows = shopify_product_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
     order_rows = shopify_orders_between(
         selection["start"].isoformat(), selection["end"].isoformat(),
         payment_type=payment_type, financial_status=financial_status, search=search,
-        employee_key=employee_key, attributed_only=True,
+        employee_key=employee_key,
+        attributed_only=(sales_scope != "overall" or bool(employee_key)),
     )
+    if sales_scope in {"crm", "nutritionists"}:
+        employee_rows = [row for row in employee_rows if matches_sales_scope(row, sales_scope)]
+        product_rows = [row for row in product_rows if matches_sales_scope(row, sales_scope)]
+        order_rows = [row for row in order_rows if matches_sales_scope(row, sales_scope)]
     if employee_key:
         employee_rows = [row for row in employee_rows if row["employee_key"] == employee_key]
         product_rows = [row for row in product_rows if row["employee_key"] == employee_key]
@@ -536,8 +602,11 @@ def sales_dashboard_details():
     payment_type = request.args.get("payment_type", "").strip()
     financial_status = request.args.get("financial_status", "").strip()
     search = request.args.get("q", "").strip()
+    sales_scope = request.args.get("scope", "overall")
+    if sales_scope not in {"overall", "crm", "nutritionists"}:
+        sales_scope = "overall"
     employee_rows, product_rows, order_rows = _shopify_underlying_rows(
-        selection, employee_key, payment_type, financial_status, search,
+        selection, employee_key, payment_type, financial_status, search, sales_scope,
     )
     detail = request.args.get("detail", "employee")
     if detail == "orders":
@@ -547,7 +616,7 @@ def sales_dashboard_details():
     return render_template(
         "sales_details.html", active_page="dashboard", page_title="Sales underlying data",
         selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows, order_rows=order_rows,
-        employee_key=employee_key, payment_type=payment_type, financial_status=financial_status, search=search,
+        employee_key=employee_key, payment_type=payment_type, financial_status=financial_status, search=search, sales_scope=sales_scope,
     )
 
 
@@ -559,8 +628,11 @@ def download_sales_details():
     payment_type = request.args.get("payment_type", "").strip()
     financial_status = request.args.get("financial_status", "").strip()
     search = request.args.get("q", "").strip()
+    sales_scope = request.args.get("scope", "overall")
+    if sales_scope not in {"overall", "crm", "nutritionists"}:
+        sales_scope = "overall"
     employee_rows, product_rows, order_rows = _shopify_underlying_rows(
-        selection, employee_key, payment_type, financial_status, search,
+        selection, employee_key, payment_type, financial_status, search, sales_scope,
     )
     return send_file(
         sales_underlying_excel(
@@ -568,7 +640,65 @@ def download_sales_details():
             order_rows=order_rows, payment_type=payment_type, financial_status=financial_status, search=search,
         ),
         as_attachment=True,
-        download_name=f"shopify-underlying-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        download_name=f"shopify-underlying-{sales_scope}-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/shopify/products/details")
+@permission_required("shopify.view")
+def product_report_details():
+    selection = selected_reporting_period("monthly")
+    employee_key = request.args.get("agent", "").strip()
+    payment_type = request.args.get("payment_type", "").strip()
+    financial_status = request.args.get("financial_status", "").strip()
+    search = request.args.get("q", "").strip()
+    sales_scope = request.args.get("scope", "overall")
+    if sales_scope not in {"overall", "crm", "nutritionists"}:
+        sales_scope = "overall"
+    employee_rows, product_rows, order_rows = _shopify_underlying_rows(
+        selection, employee_key, payment_type, financial_status, search, sales_scope,
+    )
+    employee_rows = [row for row in employee_rows if not is_crm_admin(row)]
+    product_rows = [row for row in product_rows if not is_crm_admin(row)]
+    order_rows = [row for row in order_rows if not is_crm_admin(row)]
+    detail = request.args.get("detail", "employee")
+    if detail not in {"employee", "product"}:
+        abort(400)
+    return render_template(
+        "sales_details.html", active_page="product_report", page_title="Product report underlying data",
+        selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows,
+        order_rows=order_rows, employee_key=employee_key, payment_type=payment_type,
+        financial_status=financial_status, search=search, sales_scope=sales_scope,
+        details_endpoint="product_report_details", download_endpoint="download_product_report_details",
+        back_endpoint="product_report", back_label="Back to Product Report",
+    )
+
+
+@app.route("/shopify/products/details.xlsx")
+@permission_required("shopify.view")
+def download_product_report_details():
+    selection = selected_reporting_period("monthly")
+    employee_key = request.args.get("agent", "").strip()
+    payment_type = request.args.get("payment_type", "").strip()
+    financial_status = request.args.get("financial_status", "").strip()
+    search = request.args.get("q", "").strip()
+    sales_scope = request.args.get("scope", "overall")
+    if sales_scope not in {"overall", "crm", "nutritionists"}:
+        sales_scope = "overall"
+    employee_rows, product_rows, order_rows = _shopify_underlying_rows(
+        selection, employee_key, payment_type, financial_status, search, sales_scope,
+    )
+    employee_rows = [row for row in employee_rows if not is_crm_admin(row)]
+    product_rows = [row for row in product_rows if not is_crm_admin(row)]
+    order_rows = [row for row in order_rows if not is_crm_admin(row)]
+    return send_file(
+        sales_underlying_excel(
+            employee_rows, product_rows, selection["start"], selection["end"], employee_key,
+            order_rows=order_rows, payment_type=payment_type,
+            financial_status=financial_status, search=search,
+        ), as_attachment=True,
+        download_name=f"product-report-underlying-{sales_scope}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -701,6 +831,159 @@ def shopify():
         selected_agent=report["selected_employee"]["employee_key"] if report["selected_employee"] else "",
         week_end_report=week_end_report,
         available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
+    )
+
+
+@app.route("/shopify/products")
+@permission_required("shopify.view")
+def product_report():
+    seed_default_employees()
+    selection = selected_reporting_period("monthly")
+    scope = request.args.get("scope", "overall").strip()
+    if scope not in {"overall", "crm", "nutritionists", "comparison"}:
+        scope = "overall"
+    report = shopify_sales_report(selection["period"], selection["anchor"])
+    product_comparison = None
+    if scope == "comparison":
+        product_comparison = {
+            key: product_management(report, key)
+            for key in ("overall", "crm", "nutritionists")
+        }
+        products = product_comparison["overall"]
+        product_indexes = {
+            key: {(row["product"], row["sku"]): row for row in value["products_by_quantity"]}
+            for key, value in product_comparison.items()
+        }
+        comparison_products = []
+        for row in products["products_by_quantity"][:20]:
+            identity = (row["product"], row["sku"])
+            comparison_products.append({
+                "product": row["product"], "sku": row["sku"],
+                "overall": product_indexes["overall"].get(identity, {}),
+                "crm": product_indexes["crm"].get(identity, {}),
+                "nutritionists": product_indexes["nutritionists"].get(identity, {}),
+            })
+        comparison_max_quantity = max(
+            [int(values.get("quantity") or 0) for row in comparison_products for values in (row["overall"], row["crm"], row["nutritionists"])] + [1]
+        )
+    else:
+        products = product_management(report, scope)
+        comparison_products = []
+        comparison_max_quantity = 1
+    return render_template(
+        "product_report.html", active_page="product_report", page_title="Product Report",
+        selection=selection, report=report, product_report=products, product_scope=scope,
+        product_comparison=product_comparison, comparison_products=comparison_products,
+        comparison_max_quantity=comparison_max_quantity,
+        available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
+    )
+
+
+@app.route("/shopify/products.xlsx")
+@permission_required("shopify.view")
+def download_product_report():
+    selection = selected_reporting_period("monthly")
+    scope = request.args.get("scope", "overall").strip()
+    if scope not in {"overall", "crm", "nutritionists", "comparison"}:
+        scope = "overall"
+    report = shopify_sales_report(selection["period"], selection["anchor"])
+    if scope == "comparison":
+        comparison = {
+            key: product_management(report, key)
+            for key in ("overall", "crm", "nutritionists")
+        }
+        indexes = {
+            key: {(row["product"], row["sku"]): row for row in value["products_by_quantity"]}
+            for key, value in comparison.items()
+        }
+        rows = []
+        for row in comparison["overall"]["products_by_quantity"][:20]:
+            identity = (row["product"], row["sku"])
+            rows.append({
+                "product": row["product"], "sku": row["sku"],
+                "overall": indexes["overall"].get(identity, {}),
+                "crm": indexes["crm"].get(identity, {}),
+                "nutritionists": indexes["nutritionists"].get(identity, {}),
+            })
+        return send_file(
+            product_comparison_excel(comparison, rows, selection), as_attachment=True,
+            download_name=f"product-comparison-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    products = product_management(report, scope)
+    return send_file(
+        product_report_excel(products, selection, scope), as_attachment=True,
+        download_name=f"product-report-{scope}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+@app.route("/shopify/customer-loyalty")
+@permission_required("shopify.view")
+def customer_loyalty():
+    compare = request.args.get("compare", "").strip() == "1"
+    report = loyalty_report(
+        scope=request.args.get("scope", "overall").strip(),
+        year=request.args.get("year", "").strip(),
+        month=request.args.get("month", "").strip(),
+        period=request.args.get("period", "").strip(),
+        tier=request.args.get("tier", "").strip(),
+        search=request.args.get("q", "").strip(),
+        status=request.args.get("status", "").strip(),
+    )
+    loyalty_comparison = None
+    if compare:
+        common = {
+            "year": request.args.get("year", "").strip(),
+            "month": request.args.get("month", "").strip(),
+            "period": request.args.get("period", "").strip(),
+        }
+        loyalty_comparison = {
+            key: loyalty_report(scope=key, **common)
+            for key in ("overall", "crm", "nutritionists")
+        }
+    return render_template(
+        "loyalty.html", active_page="customer_loyalty",
+        page_title="Customer Loyalty Intelligence", report=report,
+        loyalty_comparison=loyalty_comparison, loyalty_compare=compare,
+    )
+
+
+@app.route("/shopify/customer-loyalty.xlsx")
+@permission_required("shopify.view")
+def download_loyalty():
+    compare = request.args.get("compare", "").strip() == "1"
+    if compare:
+        common = {
+            "year": request.args.get("year", "").strip(),
+            "month": request.args.get("month", "").strip(),
+            "period": request.args.get("period", "").strip(),
+        }
+        comparison = {
+            key: loyalty_report(scope=key, **common)
+            for key in ("overall", "crm", "nutritionists")
+        }
+        base = comparison["overall"]
+        return send_file(
+            loyalty_comparison_workbook(comparison), as_attachment=True,
+            download_name=f"customer-loyalty-comparison-{base['start_date']}-to-{base['end_date']}.xlsx",
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    report = loyalty_report(
+        scope=request.args.get("scope", "overall").strip(),
+        year=request.args.get("year", "").strip(),
+        month=request.args.get("month", "").strip(),
+        period=request.args.get("period", "").strip(),
+        tier=request.args.get("tier", "").strip(),
+        search=request.args.get("q", "").strip(),
+        status=request.args.get("status", "").strip(),
+    )
+    return send_file(
+        loyalty_workbook(report), as_attachment=True,
+        download_name=(
+            f"customer-loyalty-{report['scope']}-{report['start_date']}-to-{report['end_date']}.xlsx"
+        ),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

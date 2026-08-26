@@ -1,0 +1,9 @@
+{% set uniware = report.fulfilment %}{% set check = uniware.reconciliation %}
+<section class="panel loyalty-panel uniware-status-panel">
+  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER STATUS · {{ report.scope_label|upper }}</span><h2>Total, delivered, cancelled, returned and pending orders</h2><p class="panel-description">Each Shopify parent order is counted once after reconciling every Uniware sub-order and item status.</p></div><div class="coverage-note"><b>Uniware coverage</b><span>{{ check.coverage_start or 'Not synced' }} – {{ check.coverage_end or 'Not synced' }}</span></div></div>
+  <div class="fulfilment-kpis prominent-order-status">
+    <a class="fulfilment-card total {{ 'active' if not report.status }}" href="{{ url_for('customer_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search) }}"><span>Total orders</span><strong>{{ uniware.total|number }}</strong><small>Matched Shopify parent orders</small></a>
+    {% for bucket in report.fulfilment_buckets %}<a class="fulfilment-card {{ bucket|lower }} {{ 'active' if report.status == bucket }}" href="{{ url_for('customer_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=bucket) }}"><span>{{ bucket }} orders</span><strong>{{ uniware.summary[bucket]|number }}</strong><small>{{ ((uniware.summary[bucket] / uniware.total * 100) if uniware.total else 0)|round(1) }}% of matched orders</small></a>{% endfor %}
+  </div>
+  <div class="uniware-match-note {{ 'healthy' if check.shopify_missing_uniware == 0 else 'attention' }}"><strong>{{ check.matched_orders|number }} exact Shopify ↔ Uniware matches</strong><span>{{ check.shopify_missing_uniware|number }} Shopify orders currently missing a Uniware match in the synced coverage.</span></div>
+</section>

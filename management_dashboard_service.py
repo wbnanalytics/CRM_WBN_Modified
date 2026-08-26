@@ -58,6 +58,42 @@ def _sales_discount_chart(trend):
     }
 
 
+def _two_line_chart(overall_trend, scoped_trend, value_key):
+    """Build a same-axis comparison chart for Wellbeing versus one team."""
+    count = len(overall_trend)
+    chart_width = max(760, count * 48 + 140)
+    left, right, top, bottom = 70, chart_width - 70, 28, 236
+    plot_width, plot_height = right - left, bottom - top
+    peak = max(
+        [float(row.get(value_key) or 0) for row in overall_trend]
+        + [float(row.get(value_key) or 0) for row in scoped_trend]
+        + [0]
+    )
+    step = max(1, math.ceil((peak / 5) / 100_000) * 100_000)
+    axis_max = step * 5
+    slot = plot_width / max(count, 1)
+    points = []
+    for index, overall in enumerate(overall_trend):
+        scoped = scoped_trend[index] if index < len(scoped_trend) else {}
+        x = left + slot * (index + 0.5)
+        overall_value = float(overall.get(value_key) or 0)
+        scoped_value = float(scoped.get(value_key) or 0)
+        points.append({
+            "label": overall["label"], "x": x,
+            "overall": overall_value, "scoped": scoped_value,
+            "overall_y": bottom - overall_value / axis_max * plot_height if axis_max else bottom,
+            "scoped_y": bottom - scoped_value / axis_max * plot_height if axis_max else bottom,
+            "overall_label": _compact_number(overall_value), "scoped_label": _compact_number(scoped_value),
+        })
+    return {
+        "width": chart_width, "height": 292, "left": left, "right": right, "top": top, "bottom": bottom,
+        "points": points,
+        "overall_line": " ".join(f'{row["x"]:.2f},{row["overall_y"]:.2f}' for row in points),
+        "scoped_line": " ".join(f'{row["x"]:.2f},{row["scoped_y"]:.2f}' for row in points),
+        "ticks": [{"y": bottom - plot_height * i / 5, "label": _compact_number(step * i)} for i in range(6)],
+    }
+
+
 def _business_group(role, name=""):
     role_text = (role or "").casefold()
     name_text = (name or "").casefold()
@@ -72,14 +108,54 @@ def _business_group(role, name=""):
     return "Other / Unassigned"
 
 
-def sales_management(report):
+def matches_sales_scope(row, scope):
+    group = _business_group(row.get("role"), row.get("display_name"))
+    if scope == "crm":
+        return group in {"Team CRM", "CRM Admin / Replacement"}
+    if scope == "nutritionists":
+        return group == "WBN – Nutritionists"
+    return True
+
+
+def is_crm_admin(row):
+    return _business_group(row.get("role"), row.get("display_name")) == "CRM Admin / Replacement"
+
+
+def product_management(report, scope="overall"):
+    """Product reporting excludes CRM Admin from every metric and row."""
+    filtered_report = {
+        **report,
+        "rows": [row for row in report.get("rows", []) if not is_crm_admin(row)],
+        "product_rows": [row for row in report.get("product_rows", []) if not is_crm_admin(row)],
+    }
+    result = sales_management(filtered_report, scope)
+    result["products_by_quantity"] = sorted(
+        result["products"],
+        key=lambda row: (-row["quantity"], -row["sales"], row["product"]),
+    )
+    result["product_quantity"] = sum(row["quantity"] for row in result["products"])
+    result["product_sales"] = sum(row["sales"] for row in result["products"])
+    result["product_discounts"] = sum(row["discounts"] for row in result["products"])
+    result["product_mrp"] = result["product_sales"] + result["product_discounts"]
+    result["product_discount_rate"] = (
+        result["product_discounts"] / result["product_mrp"] * 100
+        if result["product_mrp"] else 0
+    )
+    return result
+
+
+def sales_management(report, scope="overall"):
+    if scope not in {"overall", "crm", "nutritionists"}:
+        scope = "overall"
+    scoped_rows = [row for row in report.get("rows", []) if matches_sales_scope(row, scope)]
+    scoped_product_rows = [row for row in report.get("product_rows", []) if matches_sales_scope(row, scope)]
     groups = defaultdict(lambda: {"sales": 0.0, "orders": 0, "people": 0, "discounts": 0.0, "gross_sales": 0.0, "members": []})
-    all_sales = all_orders = all_discounts = all_gross_sales = 0
-    for row in report.get("rows", []):
+    all_sales = all_orders = all_discounts = all_gross_sales = eligible_sales = 0
+    for row in scoped_rows:
         group = _business_group(row.get("role"), row.get("display_name"))
         sales = float(row.get("total") or 0)
         orders = int(row.get("orders") or 0)
-        discounts = abs(float(row.get("discounts") or 0))
+        discounts = 0.0 if group == "CRM Admin / Replacement" else abs(float(row.get("discounts") or 0))
         gross_sales = sales + discounts
         groups[group]["sales"] += sales
         groups[group]["orders"] += orders
@@ -100,8 +176,13 @@ def sales_management(report):
         all_orders += orders
         all_discounts += discounts
         all_gross_sales += gross_sales
+        if group != "CRM Admin / Replacement":
+            eligible_sales += sales
 
-    order = ("Team CRM", "WBN – Nutritionists", "CRM Admin / Replacement", "Other / Unassigned")
+    order = {
+        "crm": ("Team CRM", "CRM Admin / Replacement"),
+        "nutritionists": ("WBN – Nutritionists",),
+    }.get(scope, ("Team CRM", "WBN – Nutritionists", "CRM Admin / Replacement", "Other / Unassigned"))
     split = []
     for name in order:
         values = groups[name]
@@ -117,18 +198,19 @@ def sales_management(report):
 
     product_totals = defaultdict(lambda: {"sales": 0.0, "discounts": 0.0, "orders": 0, "quantity": 0})
     product_agents = []
-    for row in report.get("product_rows", []):
+    for row in scoped_product_rows:
         key = (row.get("product_title") or "Unspecified product", row.get("product_sku") or "—")
         slot = product_totals[key]
+        row_discount = 0.0 if _business_group(row.get("role"), row.get("display_name")) == "CRM Admin / Replacement" else abs(float(row.get("discounts") or 0))
         slot["sales"] += float(row.get("total") or 0)
-        slot["discounts"] += abs(float(row.get("discounts") or 0))
+        slot["discounts"] += row_discount
         slot["orders"] += int(row.get("orders") or 0)
         slot["quantity"] += int(row.get("quantity") or 0)
         product_agents.append({
             "employee": row.get("display_name") or "Unassigned", "role": row.get("role") or "Unassigned",
             "product": key[0], "sku": key[1], "sales": float(row.get("total") or 0),
-            "discounts": abs(float(row.get("discounts") or 0)),
-            "mrp": float(row.get("total") or 0) + abs(float(row.get("discounts") or 0)),
+            "discounts": row_discount,
+            "mrp": float(row.get("total") or 0) + row_discount,
             "orders": int(row.get("orders") or 0), "quantity": int(row.get("quantity") or 0),
         })
     products = [{
@@ -141,19 +223,59 @@ def sales_management(report):
 
     trend = []
     for index, column in enumerate(report.get("columns", [])):
-        sales_value = sum(float(row.get("values", [0])[index] or 0) for row in report.get("rows", []) if row.get("include_in_team"))
-        discount_value = sum(abs(float(row.get("discount_values", [0])[index] or 0)) for row in report.get("rows", []) if row.get("include_in_team"))
+        # Overall Sales includes every displayed business group. Keep the
+        # trend and its Excel export on the exact same complete row set.
+        sales_value = sum(float(row.get("values", [0])[index] or 0) for row in scoped_rows)
+        eligible_sales_value = sum(
+            float(row.get("values", [0])[index] or 0) for row in scoped_rows
+            if _business_group(row.get("role"), row.get("display_name")) != "CRM Admin / Replacement"
+        )
+        discount_value = sum(
+            abs(float(row.get("discount_values", [0])[index] or 0)) for row in scoped_rows
+            if _business_group(row.get("role"), row.get("display_name")) != "CRM Admin / Replacement"
+        )
+        # Selling price always represents the complete selected scope. Only
+        # CRM Admin's discount is excluded from the eligible discount amount.
         mrp_value = sales_value + discount_value
         trend.append({
             "label": column["label"], "sales": sales_value, "discounts": discount_value,
-            "mrp": mrp_value, "discount_rate": discount_value / mrp_value * 100 if mrp_value else 0,
+            "mrp": mrp_value, "eligible_sales": eligible_sales_value,
+            "discount_rate": discount_value / mrp_value * 100 if mrp_value else 0,
         })
     trend_max = max((max(row["sales"], row["discounts"]) for row in trend), default=0) or 1
     for row in trend:
         row["sales_pct"] = row["sales"] / trend_max * 100
         row["discount_pct"] = row["discounts"] / trend_max * 100
+    overall_trend = []
+    for index, column in enumerate(report.get("columns", [])):
+        overall_sales = sum(float(row.get("values", [0])[index] or 0) for row in report.get("rows", []))
+        overall_eligible_sales = sum(
+            float(row.get("values", [0])[index] or 0) for row in report.get("rows", [])
+            if _business_group(row.get("role"), row.get("display_name")) != "CRM Admin / Replacement"
+        )
+        overall_discount = sum(
+            abs(float(row.get("discount_values", [0])[index] or 0)) for row in report.get("rows", [])
+            if _business_group(row.get("role"), row.get("display_name")) != "CRM Admin / Replacement"
+        )
+        overall_mrp = overall_sales + overall_discount
+        overall_trend.append({
+            "label": column["label"], "sales": overall_sales, "discounts": overall_discount,
+            "mrp": overall_mrp, "eligible_sales": overall_eligible_sales,
+            "discount_rate": overall_discount / overall_mrp * 100 if overall_mrp else 0,
+        })
+    comparison = None if scope == "overall" else {
+        "sales": _two_line_chart(overall_trend, trend, "sales"),
+        "discounts": _two_line_chart(overall_trend, trend, "discounts"),
+        "overall_trend": overall_trend,
+        "overall_sales": sum(row["sales"] for row in overall_trend),
+        "overall_discounts": sum(row["discounts"] for row in overall_trend),
+        "scoped_sales": all_sales,
+        "scoped_discounts": all_discounts,
+    }
     return {
+        "scope": scope,
         "sales": all_sales,
+        "eligible_sales": eligible_sales,
         "orders": all_orders,
         "aov": all_sales / all_orders if all_orders else 0,
         "split": split,
@@ -161,10 +283,12 @@ def sales_management(report):
         "product_agents": product_agents,
         "trend": trend,
         "chart": _sales_discount_chart(trend),
-        "discount_available": all_gross_sales > 0,
+        "comparison": comparison,
+        "discount_available": eligible_sales + all_discounts > 0,
         "discounts": all_discounts,
         "gross_sales": all_sales + all_discounts,
         "mrp": all_sales + all_discounts,
+        "total_adjusted_mrp": all_sales + all_discounts,
         "discount_rate": all_discounts / (all_sales + all_discounts) * 100 if all_sales + all_discounts else 0,
         "unassigned_sales": groups["Other / Unassigned"]["sales"],
     }

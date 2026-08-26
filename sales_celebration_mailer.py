@@ -99,25 +99,6 @@ def _full_report_section(title, period_label, rows, eyebrow="FULL TEAM REPORT"):
     </div>'''
 
 
-def _celebration_media(content_id="celebration-animation"):
-    return ""
-
-
-def _celebration_animation_path():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-celebration.gif")
-    return path if os.path.exists(path) else None
-
-
-def _perfect_attendance_animation_path():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-perfect-attendance.gif")
-    return path if os.path.exists(path) else None
-
-
-def _target_achiever_animation_path():
-    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-target-achiever.gif")
-    return path if os.path.exists(path) else None
-
-
 def _name_chips(names):
     return "".join(
         f'<span style="display:inline-block;margin:4px;padding:8px 11px;border-radius:999px;background:#edf5e9;'
@@ -136,7 +117,7 @@ def _signature():
         </td></tr></table></div>"""
 
 
-def _email_shell(title, eyebrow, intro, content, period_label, animation_cid="celebration-animation"):
+def _email_shell(title, eyebrow, intro, content, period_label):
     return f"""<!doctype html><html><body style="margin:0;background:#f4f5ef;font-family:Arial,Helvetica,sans-serif;color:#263a31">
     <div style="display:none;max-height:0;overflow:hidden">A Team CRM celebration from Wellbeing Nutrition.</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f5ef"><tr><td align="center" style="padding:28px 12px">
@@ -147,7 +128,7 @@ def _email_shell(title, eyebrow, intro, content, period_label, animation_cid="ce
           <h1 style="font-size:30px;line-height:1.18;margin:10px 0 8px;color:#fff">{html.escape(title)}</h1>
           <div style="display:inline-block;background:#d9ef78;color:#123f33;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:800">{html.escape(period_label)}</div>
         </td></tr>
-        <tr><td style="padding:30px 34px">{_celebration_media(animation_cid)}<p style="font-size:16px;line-height:1.65;margin:0 0 22px;color:#40564c">{intro}</p>
+        <tr><td style="padding:30px 34px"><p style="font-size:16px;line-height:1.65;margin:0 0 22px;color:#40564c">{intro}</p>
           {content}{_signature()}
         </td></tr>
         <tr><td style="background:#edf3e9;padding:13px 34px;color:#6a7b73;font-size:11px;text-align:center">Internal recognition · Team CRM · Wellbeing Nutrition</td></tr>
@@ -225,7 +206,7 @@ def build_samples(today=None):
         "subject": f"[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Perfect Attendance Recognition | {monthly_label}",
         "body": _email_shell("Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
             "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-            no_leave_content, monthly_label, animation_cid="perfect-attendance-animation"),
+            no_leave_content, monthly_label),
     })
 
     daily_report = sales_report("daily", yesterday)
@@ -249,7 +230,7 @@ def build_samples(today=None):
         "subject": "[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Target Achievers | Daily & Monthly Recognition",
         "body": _email_shell("Target Achievers", "MILESTONE CELEBRATION",
             "Congratulations to the colleagues who met or exceeded their assigned sales target. Your focus and execution set a strong benchmark for the team.",
-            achieved_content, f"Daily {yesterday:%d %b} · Monthly {monthly_label}", animation_cid="target-achiever-animation"),
+            achieved_content, f"Daily {yesterday:%d %b} · Monthly {monthly_label}"),
     })
     return samples
 

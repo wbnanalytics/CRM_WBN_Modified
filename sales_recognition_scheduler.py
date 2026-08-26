@@ -161,7 +161,7 @@ def send_perfect_attendance(today):
     body = _email_shell(
         "Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
         "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-        content, label, animation_cid="perfect-attendance-animation",
+        content, label,
     )
     return _send_once(
         f"perfect-attendance:{prior_start:%Y-%m}", "perfect_attendance", label,
@@ -184,7 +184,7 @@ def send_target_achievers(today):
         body = _email_shell(
             "Daily Sales Target Achieved", "MILESTONE CELEBRATION",
             "Congratulations! You have reached your assigned sales target for today. Your focus and execution set a strong benchmark for the team.",
-            content, today.strftime("%d %b %Y"), animation_cid="target-achiever-animation",
+            content, today.strftime("%d %b %Y"),
         )
         if _send_once(
             f"target:daily:{today.isoformat()}:{row['employee_key']}", "daily_target",

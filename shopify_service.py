@@ -10,6 +10,7 @@ import requests
 from database import (
     apply_shopify_order_attribution,
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
+    replace_shopify_customer_sales_daily,
     replace_shopify_order_details, replace_shopify_product_sales, replace_shopify_sales,
     seed_shopify_employees, shopify_orders_between, shopify_product_sales_between, shopify_sales_between,
     shopify_sales_summary, shopify_targets_between, start_sync_run,
@@ -18,6 +19,9 @@ from database import (
 
 IST = ZoneInfo("Asia/Kolkata")
 API_VERSION = "2026-07"
+UNASSIGNED_EMPLOYEE_KEY = "shopify-unassigned"
+UNASSIGNED_DISPLAY_NAME = "Unassigned / Online Store"
+OVERALL_CUSTOMER_KEY = "shopify-overall"
 
 ALIASES = {
     "eeshikapoojari": ("eeshikapujari", "Eeshika Pujari"),
@@ -88,6 +92,14 @@ def seed_default_employees():
             "employee_key": key, "source_name": name, "display_name": display,
             "role": role, "weekly_target": target, "include_in_team": True,
         })
+    rows.append({
+        "employee_key": UNASSIGNED_EMPLOYEE_KEY,
+        "source_name": UNASSIGNED_DISPLAY_NAME,
+        "display_name": UNASSIGNED_DISPLAY_NAME,
+        "role": "Unassigned",
+        "weekly_target": 0,
+        "include_in_team": False,
+    })
     seed_shopify_employees(rows)
 
 
@@ -258,6 +270,120 @@ def sync_shopify_order_attribution(start_date, end_date):
     return apply_shopify_order_attribution(rows)
 
 
+def sync_shopify_customer_history(start_date, end_date):
+    """Refresh customer/order aggregates without changing anything in Shopify."""
+    start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+    end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    if start > end:
+        raise ValueError("Start date must not be after end date")
+    seed_default_employees()
+    run_id = start_sync_run("shopify_customers", "customer_loyalty", start.isoformat(), end.isoformat())
+    received = saved = 0
+    try:
+        token = _access_token()
+        for month_start, month_end in _month_chunks(start, end):
+            overall_combined = defaultdict(lambda: {"orders": 0, "total_sales": 0.0})
+            team_combined = defaultdict(lambda: {"orders": 0, "total_sales": 0.0})
+            cursor = month_start
+            while cursor <= month_end:
+                segment_end = min(month_end, cursor + timedelta(days=6))
+                overall_query = f"""FROM sales
+SHOW orders, total_sales
+TIMESERIES day
+GROUP BY customer_id, customer_email, customer_name
+SINCE {cursor.isoformat()} UNTIL {segment_end.isoformat()}
+ORDER BY day ASC, customer_id ASC, customer_email ASC"""
+                team_query = f"""FROM sales
+SHOW orders, total_sales
+TIMESERIES day
+GROUP BY customer_id, customer_email, customer_name, staff_member_name
+SINCE {cursor.isoformat()} UNTIL {segment_end.isoformat()}
+ORDER BY day ASC, customer_id ASC, customer_email ASC, staff_member_name ASC"""
+                overall_rows = _shopifyql_all(token, overall_query)
+                team_rows = _shopifyql_all(token, team_query)
+                received += len(overall_rows) + len(team_rows)
+                for source in overall_rows:
+                    key = (
+                        str(source.get("day") or "")[:10],
+                        str(source.get("customer_id") or ""),
+                        str(source.get("customer_email") or "").strip(),
+                        str(source.get("customer_name") or "").strip(),
+                    )
+                    overall_combined[key]["orders"] += int(float(source.get("orders") or 0))
+                    overall_combined[key]["total_sales"] += float(source.get("total_sales") or 0)
+                for source in team_rows:
+                    source_name = str(source.get("staff_member_name") or "").strip()
+                    if not source_name:
+                        continue
+                    key = (
+                        str(source.get("day") or "")[:10],
+                        str(source.get("customer_id") or ""),
+                        str(source.get("customer_email") or "").strip(),
+                        str(source.get("customer_name") or "").strip(),
+                        source_name,
+                    )
+                    team_combined[key]["orders"] += int(float(source.get("orders") or 0))
+                    team_combined[key]["total_sales"] += float(source.get("total_sales") or 0)
+                cursor = segment_end + timedelta(days=1)
+            rows = [{
+                "day": day,
+                "customer_id": customer_id,
+                "customer_email": customer_email,
+                "customer_name": customer_name,
+                "employee_key": OVERALL_CUSTOMER_KEY,
+                "source_employee_name": "Wellbeing Overall",
+                "order_count": totals["orders"],
+                "total_sales": totals["total_sales"],
+            } for (day, customer_id, customer_email, customer_name), totals in overall_combined.items()]
+            for (day, customer_id, customer_email, customer_name, source_name), totals in team_combined.items():
+                employee_key, _display_name = _employee_identity(source_name)
+                rows.append({
+                    "day": day,
+                    "customer_id": customer_id,
+                    "customer_email": customer_email,
+                    "customer_name": customer_name,
+                    "employee_key": employee_key if source_name else "",
+                    "source_employee_name": source_name,
+                    "order_count": totals["orders"],
+                    "total_sales": totals["total_sales"],
+                })
+            saved += replace_shopify_customer_sales_daily(month_start.isoformat(), month_end.isoformat(), rows)
+        finish_sync_run(run_id, "success", received, saved)
+        return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
+    except Exception as exc:
+        finish_sync_run(run_id, "failed", received, saved, str(exc)[:1000])
+        raise
+
+
+def sync_shopify_order_history(start_date, end_date):
+    """Backfill reconciliable order details and attribution only; Shopify remains read-only."""
+    start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
+    end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
+    if start > end:
+        raise ValueError("Start date must not be after end date")
+    run_id = start_sync_run("shopify_orders", "loyalty_reconciliation", start.isoformat(), end.isoformat())
+    received = saved = 0
+    try:
+        token = _access_token()
+        for month_start, month_end in _month_chunks(start, end):
+            order_rows = _shopify_orders(token, month_start, month_end)
+            attribution_rows = _shopify_order_attribution(token, month_start, month_end)
+            by_number = {row["order_number"]: row for row in attribution_rows if row["order_number"]}
+            by_name = {row["order_name"]: row for row in attribution_rows if row["order_name"]}
+            for order in order_rows:
+                attribution = by_number.get(order["order_number"]) or by_name.get(order["order_name"])
+                if attribution:
+                    order["employee_key"] = attribution["employee_key"]
+                    order["source_employee_name"] = attribution["source_employee_name"]
+            received += len(order_rows)
+            saved += replace_shopify_order_details(month_start.isoformat(), month_end.isoformat(), order_rows)
+        finish_sync_run(run_id, "success", received, saved)
+        return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
+    except Exception as exc:
+        finish_sync_run(run_id, "failed", received, saved, str(exc)[:1000])
+        raise
+
+
 def _month_chunks(start, end):
     cursor = start
     while cursor <= end:
@@ -290,13 +416,25 @@ SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
 ORDER BY day ASC, staff_member_name ASC"""
             source_rows = _shopifyql_all(token, query)
             received += len(source_rows)
+            overall_query = f"""FROM sales
+SHOW gross_sales, discounts, total_sales, orders
+TIMESERIES day
+SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
+ORDER BY day ASC"""
+            overall_rows = _shopifyql_all(token, overall_query)
+            received += len(overall_rows)
+            overall_by_day = {str(row.get("day") or "")[:10]: row for row in overall_rows}
             combined = defaultdict(lambda: {"total_sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "order_count": 0, "source_names": set()})
             discovered = {}
             for row in source_rows:
-                source_name = row.get("staff_member_name")
-                if not source_name:
-                    continue
-                employee_key, display_name = _employee_identity(source_name)
+                source_name = str(row.get("staff_member_name") or "").strip()
+                if source_name:
+                    employee_key, display_name = _employee_identity(source_name)
+                    source_label = source_name
+                else:
+                    employee_key = UNASSIGNED_EMPLOYEE_KEY
+                    display_name = UNASSIGNED_DISPLAY_NAME
+                    source_label = UNASSIGNED_DISPLAY_NAME
                 day = str(row.get("day") or "")[:10]
                 if not employee_key or not day:
                     continue
@@ -305,12 +443,23 @@ ORDER BY day ASC, staff_member_name ASC"""
                 item["gross_sales"] += float(row.get("gross_sales") or 0)
                 item["discounts"] += float(row.get("discounts") or 0)
                 item["order_count"] += int(float(row.get("orders") or 0))
-                item["source_names"].add(str(source_name))
+                item["source_names"].add(source_label)
                 discovered[employee_key] = {
-                    "employee_key": employee_key, "source_name": str(source_name),
+                    "employee_key": employee_key, "source_name": source_label,
                     "display_name": display_name, "role": "Unassigned",
                     "weekly_target": 0, "include_in_team": False,
                 }
+            # Shopify's ungrouped daily result is authoritative for Wellbeing
+            # totals. Reconcile the residual into Online Store/Unassigned so
+            # employee grouping can never inflate or omit the overall figure.
+            for day, overall in overall_by_day.items():
+                named = [item for (item_day, key), item in combined.items() if item_day == day and key != UNASSIGNED_EMPLOYEE_KEY]
+                residual = combined[(day, UNASSIGNED_EMPLOYEE_KEY)]
+                residual["total_sales"] = float(overall.get("total_sales") or 0) - sum(item["total_sales"] for item in named)
+                residual["gross_sales"] = float(overall.get("gross_sales") or 0) - sum(item["gross_sales"] for item in named)
+                residual["discounts"] = float(overall.get("discounts") or 0) - sum(item["discounts"] for item in named)
+                residual["order_count"] = max(0, int(float(overall.get("orders") or 0)) - sum(item["order_count"] for item in named))
+                residual["source_names"] = {UNASSIGNED_DISPLAY_NAME}
             if discovered:
                 seed_shopify_employees(discovered.values())
             rows = [
@@ -338,12 +487,13 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
             received += len(product_source_rows)
             product_combined = defaultdict(lambda: {"total_sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "order_count": 0, "quantity_sold": 0, "source_names": set()})
             for row in product_source_rows:
-                source_name = row.get("staff_member_name")
+                source_name = str(row.get("staff_member_name") or "").strip()
                 day = str(row.get("day") or "")[:10]
                 title = str(row.get("product_title") or "Unspecified product").strip()
                 sku = str(row.get("product_variant_sku") or "").strip()
-                employee_key, _display_name = _employee_identity(source_name)
-                if not source_name or not employee_key or not day:
+                employee_key = _employee_identity(source_name)[0] if source_name else UNASSIGNED_EMPLOYEE_KEY
+                source_label = source_name or UNASSIGNED_DISPLAY_NAME
+                if not employee_key or not day:
                     continue
                 item = product_combined[(day, employee_key, title, sku)]
                 item["total_sales"] += float(row.get("total_sales") or 0)
@@ -351,7 +501,7 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                 item["discounts"] += float(row.get("discounts") or 0)
                 item["order_count"] += int(float(row.get("orders") or 0))
                 item["quantity_sold"] += int(float(row.get("net_items_sold") or 0))
-                item["source_names"].add(str(source_name))
+                item["source_names"].add(source_label)
             product_rows = [{
                 "day": day, "employee_key": employee_key,
                 "source_employee_name": " / ".join(sorted(item["source_names"])),

@@ -1,0 +1,93 @@
+{% extends "layout.html" %}
+{% block content %}
+<section class="page-heading loyalty-heading">
+  <div>
+    <span class="eyebrow">SHOPIFY × UNIWARE · RECONCILED</span>
+    <h1>Customer Loyalty Intelligence</h1>
+    <p>Customer loyalty from Shopify orders, with item-level delivery outcomes verified in Uniware.</p>
+  </div>
+  <div class="heading-actions">
+    <span class="read-only-badge">Read-only sources</span>
+    {% if loyalty_compare %}<a class="primary-button" href="{{ url_for('download_loyalty', compare=1, year=report.year, month=report.month, period=report.period) }}">Download comparison Excel</a>{% else %}<a class="primary-button" href="{{ url_for('download_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download filtered Excel</a>{% endif %}
+  </div>
+</section>
+
+<section class="panel loyalty-filter-panel">
+  <div class="loyalty-scope-tabs">
+    {% for key, label in report.scopes.items() %}
+    <a class="{{ 'active' if report.scope == key and not loyalty_compare }}" href="{{ url_for('customer_loyalty', scope=key, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">{{ label }}</a>
+    {% endfor %}
+    <a class="{{ 'active' if loyalty_compare }}" href="{{ url_for('customer_loyalty', compare=1, year=report.year, month=report.month, period=report.period) }}">Comparison</a>
+  </div>
+  <form method="get" class="loyalty-filter-form">
+    <input type="hidden" name="scope" value="{{ report.scope }}">
+    {% if loyalty_compare %}<input type="hidden" name="compare" value="1">{% endif %}
+    <label><span>Period</span><select name="period"><option value="">Year / month</option>{% for key, label in report.periods %}<option value="{{ key }}" {{ 'selected' if report.period == key }}>{{ label }}</option>{% endfor %}</select></label>
+    <label><span>Year</span><select name="year">{% for year in report.years %}<option value="{{ year }}" {{ 'selected' if report.year == year }}>{{ year }}</option>{% endfor %}</select></label>
+    <label><span>Month</span><select name="month"><option value="">All months</option>{% for number, label in report.months %}<option value="{{ number }}" {{ 'selected' if report.month == number }}>{{ label }}</option>{% endfor %}</select></label>
+    {% if not loyalty_compare %}<label><span>Loyalty tier</span><select name="tier"><option value="">All tiers</option>{% for tier in report.tiers %}<option value="{{ tier }}" {{ 'selected' if report.tier == tier }}>{{ tier }}</option>{% endfor %}</select></label>
+    <label class="loyalty-search"><span>Search</span><input type="search" name="q" value="{{ report.search }}" placeholder="{{ 'Customer, email or phone' if report.scope == 'overall' else 'Customer, email, phone or agent' }}"></label>{% endif %}
+    <button class="filter-button" type="submit">Apply</button>
+    <a class="reset-filter" href="{{ url_for('customer_loyalty', scope=report.scope) }}">Reset</a>
+  </form>
+</section>
+
+{% if loyalty_comparison %}
+{% include '_loyalty_comparison.html' %}
+{% else %}
+<section class="loyalty-overview">
+  <article class="loyalty-primary-card">
+    <span>{{ report.scope_label }}</span>
+    <strong>{{ report.customer_count|number }}</strong>
+    <small>unique matched customers · {{ report.order_count|number }} Shopify orders</small>
+  </article>
+  {% set tier_notes = {'Loyal':'7+ orders','Regular':'5–6 orders','Repeat':'2–4 orders','One-time':'1 order'} %}
+  {% for tier in report.tiers %}
+  <a class="loyalty-tier-card {{ tier|lower|replace('-','') }}" href="{{ url_for('customer_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=tier, q=report.search, status=report.status) }}">
+    <span>{{ tier }}</span><strong>{{ report.tier_counts[tier]|number }}</strong><small>{{ tier_notes[tier] }}</small>
+  </a>
+  {% endfor %}
+</section>
+{% include '_uniware_status_summary.html' %}
+
+<section class="panel loyalty-panel">
+  <div class="panel-head loyalty-panel-head">
+    <div><span class="eyebrow">CUSTOMER DIRECTORY</span><h2>{{ report.customers|length|number }} filtered customers</h2><p class="panel-description">{{ 'Wellbeing Overall uses every Shopify customer and order without requiring agent attribution. ' if report.scope == 'overall' else '' }}Exact normalized email, phone or name can connect customer records. Shopify customer ID remains the strongest identity.</p></div>
+    <div class="coverage-note"><b>Customer data coverage</b><span>{{ report.coverage.start_date or 'Not synced' }} – {{ report.coverage.end_date or 'Not synced' }}</span></div>
+  </div>
+  <div class="table-wrap loyalty-table-wrap">
+    <table class="readable-table loyalty-customer-table">
+      <thead><tr><th>Customer</th><th>Contact</th><th>Tier</th><th>Orders</th><th>First order</th><th>Last order</th>{% if report.scope != 'overall' %}<th>Team agents</th>{% endif %}<th>Identity evidence</th></tr></thead>
+      <tbody>
+      {% for row in report.customers[:500] %}
+      <tr><td><strong>{{ row.customer_name }}</strong></td><td>{{ row.customer_email or '—' }}<small>{{ row.customer_phone or '—' }}</small></td><td><span class="loyalty-pill {{ row.tier|lower|replace('-','') }}">{{ row.tier }}</span></td><td><strong>{{ row.order_count }}</strong></td><td>{{ row.first_order_month }}</td><td>{{ row.last_order_month }}</td>{% if report.scope != 'overall' %}<td>{{ row.agents|join(', ') or 'Unassigned' }}</td>{% endif %}<td>{{ row.matched_by }}</td></tr>
+      {% else %}<tr><td colspan="{{ 7 if report.scope == 'overall' else 8 }}" class="empty-state">No customers match these filters.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% if report.customers|length > 500 %}<p class="table-limit-note">Showing the first 500 customers. The filtered Excel contains all {{ report.customers|length|number }} rows.</p>{% endif %}
+</section>
+
+<section class="panel loyalty-panel">
+  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER DETAIL</span><h2>Reconciled orders · {{ report.scope_label }}</h2><p class="panel-description">Drill-down behind the order-status cards, including every Uniware sub-order and item state.</p></div></div>
+  {% set check = report.fulfilment.reconciliation %}
+  <div class="reconciliation-strip {{ 'healthy' if check.shopify_missing_uniware == 0 else 'attention' }}">
+    <div><span>Shopify orders</span><strong>{{ check.shopify_orders|number }}</strong></div>
+    <div><span>Exact matches</span><strong>{{ check.matched_orders|number }}</strong></div>
+    <div><span>Missing Uniware match</span><strong>{{ check.shopify_missing_uniware|number }}</strong></div>
+    <div><span>Non-Shopify Uniware orders excluded</span><strong>{{ check.uniware_non_shopify|number }}</strong></div>
+    <p>Totals only include exact Shopify ↔ Uniware order-code matches. Unmatched rows are never forced into team results.</p>
+  </div>
+  <div class="table-wrap loyalty-table-wrap">
+    <table class="readable-table">
+      <thead><tr><th>Order</th><th>Date</th><th>Outcome</th><th>Item states</th><th>Items</th><th>Customer</th>{% if report.scope != 'overall' %}<th>Agent</th>{% endif %}<th>Payment</th></tr></thead>
+      <tbody>
+      {% for row in report.fulfilment.orders[:500] %}
+      <tr><td><strong>{{ row.display_order_code }}</strong><small>{{ row.sub_order_count }} Uniware sub-order{{ '' if row.sub_order_count == 1 else 's' }}</small></td><td>{{ row.display_order_date }}</td><td><span class="fulfilment-pill {{ row.fulfilment_bucket|lower }}">{{ row.fulfilment_bucket }}</span></td><td>{% for key, value in row.item_status_summary.items() %}<span class="item-state">{{ key|replace('_',' ')|title }} × {{ value }}</span>{% endfor %}</td><td>{{ row.item_count }}</td><td>{{ row.customer_name or '—' }}<small>{{ row.customer_email or row.customer_phone or '—' }}</small></td>{% if report.scope != 'overall' %}<td>{{ row.display_name }}<small>{{ row.role }}</small></td>{% endif %}<td>{{ 'COD' if row.cod else 'Prepaid / other' }}</td></tr>
+      {% else %}<tr><td colspan="{{ 7 if report.scope == 'overall' else 8 }}" class="empty-state">No reconciled Uniware orders match this range and scope yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

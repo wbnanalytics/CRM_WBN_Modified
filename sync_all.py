@@ -9,8 +9,9 @@ from dotenv import load_dotenv
 
 from database import claim_sync_request, finish_sync_request, init_db
 from report_services import sync_bik, sync_zoho
-from shopify_service import sync_shopify
+from shopify_service import sync_shopify, sync_shopify_customer_history
 from sync_reports import with_retries
+from uniware_service import sync_uniware
 
 
 def main():
@@ -34,10 +35,13 @@ def main():
             ("zoho", lambda: sync_zoho(day, day)),
             ("bik_customer_tickets", lambda: with_retries(sync_bik, "customer_tickets", day, day)),
             ("bik_conversations", lambda: with_retries(sync_bik, "all_conversations", day, day)),
-            ("shopify", lambda: sync_shopify(
-                today - timedelta(days=44), today,
-                order_detail_start=today - timedelta(days=6),
-            )),
+            ("shopify", lambda: {
+                "sales": sync_shopify(
+                    today - timedelta(days=44), today,
+                    order_detail_start=today - timedelta(days=6),
+                ),
+                "customers": sync_shopify_customer_history(today - timedelta(days=6), today),
+            }),
         )
         # These sources are independent. Running them together makes the
         # button wait for the slowest source instead of the sum of all four.
@@ -49,6 +53,12 @@ def main():
                     results[name] = future.result()
                 except Exception as exc:
                     errors.append(f"{name}: {exc}")
+        # Uniware reconciliation runs after Shopify so newly fetched parent
+        # orders can be linked before fulfilment totals are published.
+        try:
+            results["uniware"] = sync_uniware(today - timedelta(days=6), today)
+        except Exception as exc:
+            errors.append(f"uniware: {exc}")
         if errors:
             finish_sync_request(request["id"], "failed", results, "; ".join(errors)[:2000])
         else:

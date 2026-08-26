@@ -2,6 +2,7 @@
 .env.azure
 .local-secrets/
 venv/
+.venv/
 __pycache__/
 *.pyc
 .DS_Store

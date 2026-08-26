@@ -194,6 +194,80 @@ def init_db():
                 synced_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS shopify_customer_sales_monthly (
+                month_start TEXT NOT NULL,
+                customer_id TEXT NOT NULL DEFAULT '',
+                customer_email TEXT NOT NULL DEFAULT '',
+                customer_name TEXT NOT NULL DEFAULT '',
+                employee_key TEXT NOT NULL DEFAULT '',
+                source_employee_name TEXT NOT NULL DEFAULT '',
+                order_count INTEGER NOT NULL DEFAULT 0,
+                total_sales REAL NOT NULL DEFAULT 0,
+                synced_at TEXT NOT NULL,
+                PRIMARY KEY (
+                    month_start, customer_id, customer_email,
+                    customer_name, employee_key, source_employee_name
+                )
+            );
+
+            CREATE TABLE IF NOT EXISTS shopify_customer_sales_daily (
+                day TEXT NOT NULL,
+                customer_id TEXT NOT NULL DEFAULT '',
+                customer_email TEXT NOT NULL DEFAULT '',
+                customer_name TEXT NOT NULL DEFAULT '',
+                employee_key TEXT NOT NULL DEFAULT '',
+                source_employee_name TEXT NOT NULL DEFAULT '',
+                order_count INTEGER NOT NULL DEFAULT 0,
+                total_sales REAL NOT NULL DEFAULT 0,
+                synced_at TEXT NOT NULL,
+                PRIMARY KEY (
+                    day, customer_id, customer_email,
+                    customer_name, employee_key, source_employee_name
+                )
+            );
+
+            CREATE TABLE IF NOT EXISTS uniware_sale_orders (
+                sale_order_code TEXT PRIMARY KEY,
+                display_order_code TEXT NOT NULL,
+                display_order_date TEXT,
+                channel TEXT,
+                source TEXT,
+                order_status TEXT,
+                fulfilment_bucket TEXT NOT NULL,
+                customer_name TEXT,
+                customer_email TEXT,
+                customer_phone TEXT,
+                cod INTEGER NOT NULL DEFAULT 0,
+                item_count INTEGER NOT NULL DEFAULT 0,
+                item_status_summary TEXT NOT NULL DEFAULT '{}',
+                linked_shopify_order_id TEXT,
+                linked_shopify_order_name TEXT,
+                employee_key TEXT,
+                source_employee_name TEXT,
+                synced_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS uniware_sale_order_items (
+                sale_order_item_code TEXT PRIMARY KEY,
+                source_item_code TEXT NOT NULL DEFAULT '',
+                sale_order_code TEXT NOT NULL,
+                display_order_code TEXT NOT NULL,
+                item_sku TEXT,
+                seller_sku_code TEXT,
+                item_name TEXT,
+                status_code TEXT NOT NULL,
+                shipping_package_status TEXT,
+                reverse_pickup_code TEXT,
+                quantity INTEGER NOT NULL DEFAULT 1,
+                selling_price REAL NOT NULL DEFAULT 0,
+                discount REAL NOT NULL DEFAULT 0,
+                mrp REAL NOT NULL DEFAULT 0,
+                updated_at TEXT,
+                synced_at TEXT NOT NULL,
+                FOREIGN KEY (sale_order_code) REFERENCES uniware_sale_orders(sale_order_code)
+                    ON DELETE CASCADE
+            );
+
             CREATE TABLE IF NOT EXISTS shopify_employee_config (
                 employee_key TEXT PRIMARY KEY,
                 source_name TEXT NOT NULL,
@@ -433,6 +507,16 @@ def init_db():
                 ON shopify_product_sales_daily(day, employee_key);
             CREATE INDEX IF NOT EXISTS idx_shopify_orders_local_date
                 ON shopify_order_details(local_date, payment_type, financial_status);
+            CREATE INDEX IF NOT EXISTS idx_shopify_customer_sales_month
+                ON shopify_customer_sales_monthly(month_start, employee_key, customer_id);
+            CREATE INDEX IF NOT EXISTS idx_shopify_customer_sales_day
+                ON shopify_customer_sales_daily(day, employee_key, customer_id);
+            CREATE INDEX IF NOT EXISTS idx_uniware_orders_display_code
+                ON uniware_sale_orders(display_order_code);
+            CREATE INDEX IF NOT EXISTS idx_uniware_orders_date_bucket
+                ON uniware_sale_orders(display_order_date, fulfilment_bucket, employee_key);
+            CREATE INDEX IF NOT EXISTS idx_uniware_items_order_status
+                ON uniware_sale_order_items(sale_order_code, status_code);
             CREATE INDEX IF NOT EXISTS idx_shopify_targets_period
                 ON shopify_sales_targets(period_type, period_start);
             CREATE INDEX IF NOT EXISTS idx_attendance_records_date
@@ -473,6 +557,11 @@ def init_db():
             db.execute("ALTER TABLE shopify_order_details ADD COLUMN employee_key TEXT")
         if "source_employee_name" not in order_columns:
             db.execute("ALTER TABLE shopify_order_details ADD COLUMN source_employee_name TEXT")
+        uniware_item_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(uniware_sale_order_items)").fetchall()
+        }
+        if "source_item_code" not in uniware_item_columns:
+            db.execute("ALTER TABLE uniware_sale_order_items ADD COLUMN source_item_code TEXT NOT NULL DEFAULT ''")
         portal_user_columns = {
             row["name"] for row in db.execute("PRAGMA table_info(portal_users)").fetchall()
         }
@@ -1065,6 +1154,255 @@ def bulk_set_shopify_targets(targets, updated_by):
             ],
         )
     return len(targets)
+
+
+def replace_shopify_customer_sales_month(month_start, rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute(
+            "DELETE FROM shopify_customer_sales_monthly WHERE month_start=?",
+            (month_start,),
+        )
+        db.executemany(
+            """INSERT INTO shopify_customer_sales_monthly
+               (month_start, customer_id, customer_email, customer_name,
+                employee_key, source_employee_name, order_count, total_sales, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                month_start, str(row.get("customer_id") or ""),
+                str(row.get("customer_email") or "").strip(),
+                str(row.get("customer_name") or "").strip(),
+                str(row.get("employee_key") or ""),
+                str(row.get("source_employee_name") or "").strip(),
+                int(float(row.get("order_count") or 0)),
+                float(row.get("total_sales") or 0), now,
+            ) for row in rows],
+        )
+    return len(rows)
+
+
+def shopify_customer_sales_between(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT s.month_start, s.customer_id, s.customer_email, s.customer_name,
+                      s.employee_key, s.source_employee_name, s.order_count, s.total_sales,
+                      COALESCE(c.display_name, s.source_employee_name, 'Unassigned') AS display_name,
+                      COALESCE(c.role, 'Unassigned') AS role, s.synced_at
+               FROM shopify_customer_sales_monthly s
+               LEFT JOIN shopify_employee_config c ON c.employee_key=s.employee_key
+               WHERE s.month_start BETWEEN substr(?, 1, 7) || '-01'
+                                       AND substr(?, 1, 7) || '-01'
+               ORDER BY s.month_start, s.customer_id, s.customer_email""",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def shopify_customer_sales_coverage():
+    with db_connection() as db:
+        row = db.execute(
+            """SELECT MIN(month_start) AS start_date,
+                      MAX(date(month_start, '+1 month', '-1 day')) AS end_date,
+                      COUNT(*) AS row_count, COALESCE(SUM(order_count), 0) AS order_count,
+                      MAX(synced_at) AS synced_at
+               FROM shopify_customer_sales_monthly"""
+        ).fetchone()
+    return dict(row)
+
+
+def replace_shopify_customer_sales_daily(start_date, end_date, rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute(
+            "DELETE FROM shopify_customer_sales_daily WHERE day BETWEEN ? AND ?",
+            (start_date, end_date),
+        )
+        db.executemany(
+            """INSERT INTO shopify_customer_sales_daily
+               (day, customer_id, customer_email, customer_name,
+                employee_key, source_employee_name, order_count, total_sales, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                str(row.get("day") or "")[:10], str(row.get("customer_id") or ""),
+                str(row.get("customer_email") or "").strip(),
+                str(row.get("customer_name") or "").strip(),
+                str(row.get("employee_key") or ""),
+                str(row.get("source_employee_name") or "").strip(),
+                int(float(row.get("order_count") or 0)),
+                float(row.get("total_sales") or 0), now,
+            ) for row in rows],
+        )
+    return len(rows)
+
+
+def shopify_customer_sales_daily_between(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT s.day, s.customer_id, s.customer_email, s.customer_name,
+                      s.employee_key, s.source_employee_name, s.order_count, s.total_sales,
+                      COALESCE(c.display_name, s.source_employee_name, 'Unassigned') AS display_name,
+                      COALESCE(c.role, 'Unassigned') AS role, s.synced_at
+               FROM shopify_customer_sales_daily s
+               LEFT JOIN shopify_employee_config c ON c.employee_key=s.employee_key
+               WHERE s.day BETWEEN ? AND ?
+               ORDER BY s.day, s.customer_id, s.customer_email""",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def shopify_customer_sales_daily_coverage():
+    with db_connection() as db:
+        row = db.execute(
+            """SELECT MIN(day) AS start_date, MAX(day) AS end_date,
+                      COUNT(*) AS row_count, COALESCE(SUM(order_count), 0) AS order_count,
+                      MAX(synced_at) AS synced_at
+               FROM shopify_customer_sales_daily"""
+        ).fetchone()
+    return dict(row)
+
+
+def replace_uniware_sale_order(order, items):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute(
+            """INSERT INTO uniware_sale_orders
+               (sale_order_code, display_order_code, display_order_date, channel, source,
+                order_status, fulfilment_bucket, customer_name, customer_email,
+                customer_phone, cod, item_count, item_status_summary,
+                linked_shopify_order_id, linked_shopify_order_name, employee_key,
+                source_employee_name, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(sale_order_code) DO UPDATE SET
+                 display_order_code=excluded.display_order_code,
+                 display_order_date=excluded.display_order_date,
+                 channel=excluded.channel, source=excluded.source,
+                 order_status=excluded.order_status,
+                 fulfilment_bucket=excluded.fulfilment_bucket,
+                 customer_name=excluded.customer_name,
+                 customer_email=excluded.customer_email,
+                 customer_phone=excluded.customer_phone,
+                 cod=excluded.cod, item_count=excluded.item_count,
+                 item_status_summary=excluded.item_status_summary,
+                 linked_shopify_order_id=excluded.linked_shopify_order_id,
+                 linked_shopify_order_name=excluded.linked_shopify_order_name,
+                 employee_key=excluded.employee_key,
+                 source_employee_name=excluded.source_employee_name,
+                 synced_at=excluded.synced_at""",
+            (
+                order["sale_order_code"], order["display_order_code"],
+                order.get("display_order_date"), order.get("channel"), order.get("source"),
+                order.get("order_status"), order["fulfilment_bucket"],
+                order.get("customer_name"), order.get("customer_email"),
+                order.get("customer_phone"), int(bool(order.get("cod"))),
+                int(order.get("item_count") or 0),
+                json.dumps(order.get("item_status_summary") or {}, sort_keys=True),
+                order.get("linked_shopify_order_id"), order.get("linked_shopify_order_name"),
+                order.get("employee_key"), order.get("source_employee_name"), now,
+            ),
+        )
+        db.execute("DELETE FROM uniware_sale_order_items WHERE sale_order_code=?", (order["sale_order_code"],))
+        db.executemany(
+            """INSERT INTO uniware_sale_order_items
+               (sale_order_item_code, source_item_code, sale_order_code, display_order_code, item_sku,
+                seller_sku_code, item_name, status_code, shipping_package_status,
+                reverse_pickup_code, quantity, selling_price, discount, mrp,
+                updated_at, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [(
+                f"{order['sale_order_code']}:{item['sale_order_item_code']}:{index}",
+                item["sale_order_item_code"], order["sale_order_code"],
+                order["display_order_code"], item.get("item_sku"),
+                item.get("seller_sku_code"), item.get("item_name"),
+                item["status_code"], item.get("shipping_package_status"),
+                item.get("reverse_pickup_code"), int(item.get("quantity") or 1),
+                float(item.get("selling_price") or 0), float(item.get("discount") or 0),
+                float(item.get("mrp") or 0), item.get("updated_at"), now,
+            ) for index, item in enumerate(items, start=1)],
+        )
+    return 1, len(items)
+
+
+def shopify_orders_for_reconciliation(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT order_id, order_name, order_number, local_date, employee_key,
+                      source_employee_name, customer_name, customer_email, customer_phone,
+                      total_price, total_discounts
+               FROM shopify_order_details
+               WHERE local_date BETWEEN ? AND ?""",
+            (start_date, end_date),
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def update_uniware_shopify_links(links):
+    now = utc_now()
+    with db_connection() as db:
+        db.executemany(
+            """UPDATE uniware_sale_orders
+               SET linked_shopify_order_id=?, linked_shopify_order_name=?,
+                   employee_key=?, source_employee_name=?, synced_at=?
+               WHERE sale_order_code=?""",
+            [(
+                item.get("shopify_order_id"), item.get("shopify_order_name"),
+                item.get("employee_key"), item.get("source_employee_name"), now,
+                item["sale_order_code"],
+            ) for item in links],
+        )
+    return len(links)
+
+
+def uniware_orders_between(start_date, end_date):
+    with db_connection() as db:
+        rows = db.execute(
+            """SELECT u.sale_order_code, u.display_order_code, u.display_order_date,
+                      u.channel, u.source, u.order_status, u.fulfilment_bucket,
+                      u.customer_name, u.customer_email, u.customer_phone, u.cod,
+                      u.item_count, u.item_status_summary, u.linked_shopify_order_id,
+                      u.linked_shopify_order_name, u.employee_key, u.source_employee_name,
+                      COALESCE(c.display_name, u.source_employee_name, 'Unassigned') AS display_name,
+                      COALESCE(c.role, 'Unassigned') AS role, u.synced_at
+               FROM uniware_sale_orders u
+               LEFT JOIN shopify_employee_config c ON c.employee_key=u.employee_key
+               WHERE u.display_order_date BETWEEN ? AND ?
+               ORDER BY u.display_order_date DESC, u.display_order_code DESC""",
+            (start_date, end_date),
+        ).fetchall()
+    result = []
+    for row in rows:
+        item = dict(row)
+        try:
+            item["item_status_summary"] = json.loads(item["item_status_summary"] or "{}")
+        except json.JSONDecodeError:
+            item["item_status_summary"] = {}
+        result.append(item)
+    return result
+
+
+def uniware_order_coverage():
+    with db_connection() as db:
+        row = db.execute(
+            """SELECT MIN(range_start) AS start_date, MAX(range_end) AS end_date,
+                      COALESCE(SUM(rows_received), 0) AS order_count,
+                      MAX(completed_at) AS synced_at
+               FROM sync_runs WHERE source='uniware' AND status='success'"""
+        ).fetchone()
+    return dict(row)
+
+
+def uniware_items_for_orders(sale_order_codes):
+    if not sale_order_codes:
+        return []
+    placeholders = ",".join("?" for _ in sale_order_codes)
+    with db_connection() as db:
+        rows = db.execute(
+            f"""SELECT * FROM uniware_sale_order_items
+                WHERE sale_order_code IN ({placeholders})
+                ORDER BY display_order_code, sale_order_item_code""",
+            list(sale_order_codes),
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def queue_sync_request(requested_by):
