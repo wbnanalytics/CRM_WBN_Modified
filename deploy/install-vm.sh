@@ -54,6 +54,8 @@ install -m 644 "$APP_DIR/deploy/wbn-crm-cert.service" /etc/systemd/system/wbn-cr
 install -m 644 "$APP_DIR/deploy/wbn-crm-cert.timer" /etc/systemd/system/wbn-crm-cert.timer
 install -m 644 "$APP_DIR/deploy/wbn-crm-shopify.service" /etc/systemd/system/wbn-crm-shopify.service
 install -m 644 "$APP_DIR/deploy/wbn-crm-shopify.timer" /etc/systemd/system/wbn-crm-shopify.timer
+install -m 644 "$APP_DIR/deploy/wbn-crm-uniware.service" /etc/systemd/system/wbn-crm-uniware.service
+install -m 644 "$APP_DIR/deploy/wbn-crm-uniware.timer" /etc/systemd/system/wbn-crm-uniware.timer
 install -m 644 "$APP_DIR/deploy/wbn-crm-manual-sync.service" /etc/systemd/system/wbn-crm-manual-sync.service
 install -m 644 "$APP_DIR/deploy/wbn-crm-manual-sync.path" /etc/systemd/system/wbn-crm-manual-sync.path
 install -m 644 "$APP_DIR/deploy/nginx-crm.conf" /etc/nginx/sites-available/wbn-crm
@@ -62,4 +64,4 @@ nginx -t
 systemctl reload nginx
 
 systemctl daemon-reload
-systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer wbn-crm-cert.timer wbn-crm-shopify.timer wbn-crm-manual-sync.path
+systemctl enable --now wbn-crm.service wbn-crm-sync.timer wbn-crm-today.timer wbn-crm-backup.timer wbn-crm-cert.timer wbn-crm-shopify.timer wbn-crm-uniware.timer wbn-crm-manual-sync.path

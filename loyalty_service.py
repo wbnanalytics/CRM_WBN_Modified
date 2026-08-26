@@ -16,7 +16,7 @@ from database import (
 SCOPES = {
     "overall": "Wellbeing Overall",
     "crm": "Team CRM",
-    "nutritionists": "WBN – Nutritionists",
+    "nutritionists": "Team Nutritionists",
 }
 TIERS = ("Loyal", "Regular", "Repeat", "One-time")
 FULFILMENT_BUCKETS = ("Delivered", "Cancelled", "Returned", "Pending")
@@ -255,6 +255,21 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
             "coverage_start": coverage.get("start_date"),
             "coverage_end": coverage.get("end_date"),
         },
+    }
+
+
+def fulfilment_summary(scope, start_date, end_date, status=""):
+    """Exact parent-order outcome totals for a dashboard range and reporting scope."""
+    scope = scope if scope in SCOPES else "overall"
+    status = status if status in FULFILMENT_BUCKETS else ""
+    return {
+        "scope": scope,
+        "scope_label": SCOPES[scope],
+        "start_date": start_date,
+        "end_date": end_date,
+        "status": status,
+        "buckets": FULFILMENT_BUCKETS,
+        "fulfilment": _fulfilment(scope, start_date, end_date, status),
     }
 
 

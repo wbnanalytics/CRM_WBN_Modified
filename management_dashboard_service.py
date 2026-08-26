@@ -98,7 +98,7 @@ def _business_group(role, name=""):
     role_text = (role or "").casefold()
     name_text = (name or "").casefold()
     if "nutrition" in role_text:
-        return "WBN – Nutritionists"
+        return "Team Nutritionists"
     if "admin" in role_text or "replacement" in role_text:
         return "CRM Admin / Replacement"
     if role_text in {"cs", "customer success"} or "sales" in role_text or any(word in role_text for word in ("crm - cs", "limechat", "calls", "emails", "orm", "quality", "coach")):
@@ -113,7 +113,7 @@ def matches_sales_scope(row, scope):
     if scope == "crm":
         return group in {"Team CRM", "CRM Admin / Replacement"}
     if scope == "nutritionists":
-        return group == "WBN – Nutritionists"
+        return group == "Team Nutritionists"
     return True
 
 
@@ -163,6 +163,7 @@ def sales_management(report, scope="overall"):
         groups[group]["discounts"] += discounts
         groups[group]["gross_sales"] += gross_sales
         groups[group]["members"].append({
+            "employee_key": row.get("employee_key") or "",
             "name": row.get("display_name") or "Unassigned",
             "role": row.get("role") or "Unassigned",
             "sales": sales,
@@ -181,8 +182,8 @@ def sales_management(report, scope="overall"):
 
     order = {
         "crm": ("Team CRM", "CRM Admin / Replacement"),
-        "nutritionists": ("WBN – Nutritionists",),
-    }.get(scope, ("Team CRM", "WBN – Nutritionists", "CRM Admin / Replacement", "Other / Unassigned"))
+        "nutritionists": ("Team Nutritionists",),
+    }.get(scope, ("Team CRM", "Team Nutritionists", "CRM Admin / Replacement", "Other / Unassigned"))
     split = []
     for name in order:
         values = groups[name]

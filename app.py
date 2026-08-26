@@ -34,7 +34,11 @@ from dashboard_export import (
 )
 from management_dashboard_service import sales_management, cs_management, matches_sales_scope, is_crm_admin, product_management
 from loyalty_export import loyalty_comparison_workbook, loyalty_workbook
-from loyalty_service import loyalty_report
+from loyalty_service import loyalty_report, fulfilment_summary
+from report_view_export import (
+    comparison_view_excel, loyalty_comparison_view_excel, loyalty_view_excel,
+    product_view_excel, underlying_view_excel, visible_table_excel,
+)
 from portal_export import attendance_planner_workbook, source_metrics_workbook, workbook_from_tables
 
 
@@ -279,7 +283,7 @@ def refresh_ticker_data():
         "shopify": "Hourly",
         "zoho": "09:00 / 21:00 IST",
         "bik": "09:00 / 21:00 IST",
-        "uniware": "With manual refresh",
+        "uniware": "09:00 / 21:00 IST · hourly retry",
     }
     for row in recent_sync_runs(100):
         latest.setdefault(row["source"], row)
@@ -507,8 +511,15 @@ def dashboard():
             for key in ("overall", "crm", "nutritionists")
         }
         sales_management_report = sales_comparison["overall"]
+        sales_fulfilment_rows = [
+            fulfilment_summary(key, selection["start"].isoformat(), selection["end"].isoformat())
+            for key in ("overall", "crm", "nutritionists")
+        ] if view == "sales" else []
     else:
         sales_management_report = sales_management(report, sales_scope)
+        sales_fulfilment_rows = [
+            fulfilment_summary(sales_scope, selection["start"].isoformat(), selection["end"].isoformat())
+        ] if view == "sales" else []
     cs_management_report = cs_management(cs_report)
     attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
@@ -518,6 +529,7 @@ def dashboard():
         cs_management=cs_management_report,
         top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"], sales_scope=sales_scope, sales_comparison=sales_comparison,
+        sales_fulfilment_rows=sales_fulfilment_rows,
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
         available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
     )
@@ -565,7 +577,7 @@ def download_sales_comparison():
         for key in ("overall", "crm", "nutritionists")
     }
     return send_file(
-        sales_comparison_excel(comparison, selection), as_attachment=True,
+        comparison_view_excel(comparison, request.args.get("export_view", "sales"), "sales"), as_attachment=True,
         download_name=f"sales-comparison-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -635,10 +647,7 @@ def download_sales_details():
         selection, employee_key, payment_type, financial_status, search, sales_scope,
     )
     return send_file(
-        sales_underlying_excel(
-            employee_rows, product_rows, selection["start"], selection["end"], employee_key,
-            order_rows=order_rows, payment_type=payment_type, financial_status=financial_status, search=search,
-        ),
+        underlying_view_excel(request.args.get("detail", "employee"), order_rows, product_rows),
         as_attachment=True,
         download_name=f"shopify-underlying-{sales_scope}-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -693,11 +702,7 @@ def download_product_report_details():
     product_rows = [row for row in product_rows if not is_crm_admin(row)]
     order_rows = [row for row in order_rows if not is_crm_admin(row)]
     return send_file(
-        sales_underlying_excel(
-            employee_rows, product_rows, selection["start"], selection["end"], employee_key,
-            order_rows=order_rows, payment_type=payment_type,
-            financial_status=financial_status, search=search,
-        ), as_attachment=True,
+        underlying_view_excel(request.args.get("detail", "employee"), order_rows, product_rows), as_attachment=True,
         download_name=f"product-report-underlying-{sales_scope}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -906,13 +911,17 @@ def download_product_report():
                 "nutritionists": indexes["nutritionists"].get(identity, {}),
             })
         return send_file(
-            product_comparison_excel(comparison, rows, selection), as_attachment=True,
+            comparison_view_excel(comparison, request.args.get("export_view", "sales"), "product", rows), as_attachment=True,
             download_name=f"product-comparison-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
     products = product_management(report, scope)
     return send_file(
-        product_report_excel(products, selection, scope), as_attachment=True,
+        product_view_excel(
+            products,
+            {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}[scope],
+            request.args.get("export_view", "sales"),
+        ), as_attachment=True,
         download_name=f"product-report-{scope}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
@@ -965,7 +974,7 @@ def download_loyalty():
         }
         base = comparison["overall"]
         return send_file(
-            loyalty_comparison_workbook(comparison), as_attachment=True,
+            loyalty_comparison_view_excel(comparison, request.args.get("export_view", "customers")), as_attachment=True,
             download_name=f"customer-loyalty-comparison-{base['start_date']}-to-{base['end_date']}.xlsx",
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
@@ -979,7 +988,7 @@ def download_loyalty():
         status=request.args.get("status", "").strip(),
     )
     return send_file(
-        loyalty_workbook(report), as_attachment=True,
+        loyalty_view_excel(report, request.args.get("export_view", "customers")), as_attachment=True,
         download_name=(
             f"customer-loyalty-{report['scope']}-{report['start_date']}-to-{report['end_date']}.xlsx"
         ),
@@ -1125,6 +1134,24 @@ def request_full_sync():
 @permission_required("dashboard")
 def full_sync_status():
     return jsonify(latest_sync_request() or {"status": "idle"})
+
+
+@app.route("/api/export-view.xlsx", methods=["POST"])
+def export_visible_view():
+    require_json_csrf()
+    payload = request.get_json(silent=True) or {}
+    headers = payload.get("headers") or []
+    rows = payload.get("rows") or []
+    totals = payload.get("totals") or []
+    if not isinstance(headers, list) or not isinstance(rows, list) or not isinstance(totals, list) or len(headers) > 50 or len(rows) > 10000:
+        abort(400)
+    rows = [row for row in rows if isinstance(row, list)]
+    return send_file(
+        visible_table_excel(payload.get("title"), headers, rows, totals),
+        as_attachment=True,
+        download_name="filtered-report-view.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 def selected_target_month():

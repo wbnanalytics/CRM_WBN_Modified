@@ -158,7 +158,7 @@ def loyalty_comparison_workbook(comparison):
     overview.append(["From", base["start_date"], "To", base["end_date"], "Period", base["period"] or "Year / month"])
     overview.append([])
     overview.append(["Scope", "Unique Customers", "Shopify Orders", "Loyal", "Regular", "Repeat", "One-time", "Matched Uniware Orders"])
-    labels = {"overall": "Wellbeing", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
+    labels = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
     for key in ("overall", "crm", "nutritionists"):
         row = comparison[key]
         overview.append([

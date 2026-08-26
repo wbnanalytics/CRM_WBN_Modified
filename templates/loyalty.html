@@ -8,7 +8,6 @@
   </div>
   <div class="heading-actions">
     <span class="read-only-badge">Read-only sources</span>
-    {% if loyalty_compare %}<a class="primary-button" href="{{ url_for('download_loyalty', compare=1, year=report.year, month=report.month, period=report.period) }}">Download comparison Excel</a>{% else %}<a class="primary-button" href="{{ url_for('download_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download filtered Excel</a>{% endif %}
   </div>
 </section>
 
@@ -36,11 +35,11 @@
 {% include '_loyalty_comparison.html' %}
 {% else %}
 <section class="loyalty-overview">
-  <article class="loyalty-primary-card">
+  <a class="loyalty-primary-card" href="#customer-directory">
     <span>{{ report.scope_label }}</span>
     <strong>{{ report.customer_count|number }}</strong>
     <small>unique matched customers · {{ report.order_count|number }} Shopify orders</small>
-  </article>
+  </a>
   {% set tier_notes = {'Loyal':'7+ orders','Regular':'5–6 orders','Repeat':'2–4 orders','One-time':'1 order'} %}
   {% for tier in report.tiers %}
   <a class="loyalty-tier-card {{ tier|lower|replace('-','') }}" href="{{ url_for('customer_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=tier, q=report.search, status=report.status) }}">
@@ -50,10 +49,10 @@
 </section>
 {% include '_uniware_status_summary.html' %}
 
-<section class="panel loyalty-panel">
+<section class="panel loyalty-panel" id="customer-directory">
   <div class="panel-head loyalty-panel-head">
     <div><span class="eyebrow">CUSTOMER DIRECTORY</span><h2>{{ report.customers|length|number }} filtered customers</h2><p class="panel-description">{{ 'Wellbeing Overall uses every Shopify customer and order without requiring agent attribution. ' if report.scope == 'overall' else '' }}Exact normalized email, phone or name can connect customer records. Shopify customer ID remains the strongest identity.</p></div>
-    <div class="coverage-note"><b>Customer data coverage</b><span>{{ report.coverage.start_date or 'Not synced' }} – {{ report.coverage.end_date or 'Not synced' }}</span></div>
+    <div class="view-title-actions"><div class="coverage-note"><b>Customer data coverage</b><span>{{ report.coverage.start_date or 'Not synced' }} – {{ report.coverage.end_date or 'Not synced' }}</span></div><a class="mini-export" href="{{ url_for('download_loyalty', export_view='customers', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download this view</a></div>
   </div>
   <div class="table-wrap loyalty-table-wrap">
     <table class="readable-table loyalty-customer-table">
@@ -62,14 +61,14 @@
       {% for row in report.customers[:500] %}
       <tr><td><strong>{{ row.customer_name }}</strong></td><td>{{ row.customer_email or '—' }}<small>{{ row.customer_phone or '—' }}</small></td><td><span class="loyalty-pill {{ row.tier|lower|replace('-','') }}">{{ row.tier }}</span></td><td><strong>{{ row.order_count }}</strong></td><td>{{ row.first_order_month }}</td><td>{{ row.last_order_month }}</td>{% if report.scope != 'overall' %}<td>{{ row.agents|join(', ') or 'Unassigned' }}</td>{% endif %}<td>{{ row.matched_by }}</td></tr>
       {% else %}<tr><td colspan="{{ 7 if report.scope == 'overall' else 8 }}" class="empty-state">No customers match these filters.</td></tr>{% endfor %}
-      </tbody>
+      </tbody><tfoot><tr><th colspan="3">Filtered total · {{ report.customers|length|number }} customers</th><th>{{ report.customers|sum(attribute='order_count')|number }} orders</th><th colspan="{{ 3 if report.scope == 'overall' else 4 }}">Active filters applied</th></tr></tfoot>
     </table>
   </div>
   {% if report.customers|length > 500 %}<p class="table-limit-note">Showing the first 500 customers. The filtered Excel contains all {{ report.customers|length|number }} rows.</p>{% endif %}
 </section>
 
 <section class="panel loyalty-panel">
-  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER DETAIL</span><h2>Reconciled orders · {{ report.scope_label }}</h2><p class="panel-description">Drill-down behind the order-status cards, including every Uniware sub-order and item state.</p></div></div>
+  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER DETAIL</span><h2>Reconciled orders · {{ report.scope_label }}</h2><p class="panel-description">Drill-down behind the order-status cards, including every Uniware sub-order and item state.</p></div><a class="mini-export" href="{{ url_for('download_loyalty', export_view='fulfilment', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download this view</a></div>
   {% set check = report.fulfilment.reconciliation %}
   <div class="reconciliation-strip {{ 'healthy' if check.shopify_missing_uniware == 0 else 'attention' }}">
     <div><span>Shopify orders</span><strong>{{ check.shopify_orders|number }}</strong></div>
@@ -85,7 +84,7 @@
       {% for row in report.fulfilment.orders[:500] %}
       <tr><td><strong>{{ row.display_order_code }}</strong><small>{{ row.sub_order_count }} Uniware sub-order{{ '' if row.sub_order_count == 1 else 's' }}</small></td><td>{{ row.display_order_date }}</td><td><span class="fulfilment-pill {{ row.fulfilment_bucket|lower }}">{{ row.fulfilment_bucket }}</span></td><td>{% for key, value in row.item_status_summary.items() %}<span class="item-state">{{ key|replace('_',' ')|title }} × {{ value }}</span>{% endfor %}</td><td>{{ row.item_count }}</td><td>{{ row.customer_name or '—' }}<small>{{ row.customer_email or row.customer_phone or '—' }}</small></td>{% if report.scope != 'overall' %}<td>{{ row.display_name }}<small>{{ row.role }}</small></td>{% endif %}<td>{{ 'COD' if row.cod else 'Prepaid / other' }}</td></tr>
       {% else %}<tr><td colspan="{{ 7 if report.scope == 'overall' else 8 }}" class="empty-state">No reconciled Uniware orders match this range and scope yet.</td></tr>{% endfor %}
-      </tbody>
+      </tbody><tfoot><tr><th colspan="4">Filtered total · {{ report.fulfilment.orders|length|number }} orders</th><th>{{ report.fulfilment.orders|sum(attribute='item_count')|number }} items</th><th colspan="{{ 2 if report.scope == 'overall' else 3 }}">Active filters applied</th></tr></tfoot>
     </table>
   </div>
 </section>

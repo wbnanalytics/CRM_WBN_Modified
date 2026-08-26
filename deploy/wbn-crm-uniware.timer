@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Uniware at 09:00/21:00 IST and retry hourly until successful
+
+[Timer]
+OnCalendar=*-*-* *:10:00 Asia/Kolkata
+Persistent=true
+RandomizedDelaySec=45
+Unit=wbn-crm-uniware.service
+
+[Install]
+WantedBy=timers.target

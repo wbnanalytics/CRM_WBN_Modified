@@ -47,6 +47,7 @@ const syncButton = document.querySelector("[data-sync-all]");
 const syncMessage = document.querySelector("[data-sync-message]");
 if (syncButton) {
   let pollTimer;
+  let foregroundDeadline = 0;
   const setSyncState = (status, message) => {
     const busy = status === "queued" || status === "running";
     syncButton.disabled = busy;
@@ -59,6 +60,13 @@ if (syncButton) {
       const response = await fetch("/api/sync/status", {headers: {Accept: "application/json"}});
       const data = await response.json();
       if (data.status === "queued" || data.status === "running") {
+        if (foregroundDeadline && Date.now() >= foregroundDeadline) {
+          syncButton.disabled = false;
+          syncButton.textContent = "Refresh All Data";
+          if (syncMessage) syncMessage.textContent = "Refresh continues safely in the background";
+          pollTimer = setTimeout(() => pollSync(showFailure), 15000);
+          return;
+        }
         setSyncState(data.status, data.status === "queued" ? "Refresh queued…" : "Refreshing Zoho, BIK, Shopify and Uniware…");
         pollTimer = setTimeout(() => pollSync(showFailure), 3000);
       } else if (data.status === "success") {
@@ -82,6 +90,7 @@ if (syncButton) {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || "Refresh request failed");
+      foregroundDeadline = Date.now() + 55000;
       pollSync(true);
     } catch (error) {
       setSyncState("failed", error.message || "Refresh request failed");
@@ -168,3 +177,144 @@ if (salesChart && salesChartTooltip) {
     point.addEventListener("pointerleave", () => { salesChartTooltip.hidden = true; });
   });
 }
+
+// Excel-style table filters, live filtered totals and one-view export.
+document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
+  if (!table.tHead?.rows?.length || table.dataset.excelFilterReady) return;
+  table.dataset.excelFilterReady = "1";
+  const header = table.tHead.rows[0];
+  const headers = [...header.cells].map((cell) => cell.textContent.trim());
+  const bodyRows = [...(table.tBodies[0]?.rows || [])].filter((row) => !row.querySelector(".empty-state"));
+  if (!bodyRows.length) return;
+  const filters = headers.map(() => ({type: "text", value: ""}));
+  const filterRow = table.tHead.insertRow();
+  filterRow.className = "excel-filter-row";
+  const normalizedCell = (row, index) => (row.cells[index]?.innerText || "").replace(/\s+/g, " ").trim();
+  bodyRows.forEach((row) => {
+    const target = row.querySelector('a[href]:not(.mini-export)');
+    if (!target) return;
+    [...row.cells].forEach((cell) => {
+      if (cell.querySelector("a,button,input,select,details") || !/₹|%|^[\s\d,.]+$/.test(cell.innerText.trim())) return;
+      cell.classList.add("numeric-drill-cell");
+      cell.tabIndex = 0;
+      cell.setAttribute("role", "link");
+      const open = () => { window.location.href = target.href; };
+      cell.addEventListener("click", open);
+      cell.addEventListener("keydown", (event) => { if (event.key === "Enter") open(); });
+    });
+  });
+
+  headers.forEach((label, index) => {
+    const cell = document.createElement("th");
+    filterRow.append(cell);
+    const isMulti = /agent|employee|team|role/i.test(label);
+    if (isMulti) {
+      filters[index] = {type: "multi", values: new Set()};
+      const values = [...new Set(bodyRows.map((row) => normalizedCell(row, index)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const details = document.createElement("details");
+      details.className = "column-multiselect";
+      const summary = document.createElement("summary");
+      summary.textContent = "All";
+      const options = document.createElement("div");
+      values.forEach((value) => {
+        const option = document.createElement("label");
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.value = value;
+        input.addEventListener("change", () => {
+          if (input.checked) filters[index].values.add(value); else filters[index].values.delete(value);
+          summary.textContent = filters[index].values.size ? `${filters[index].values.size} selected` : "All";
+          applyFilters();
+        });
+        option.append(input, document.createTextNode(value));
+        options.append(option);
+      });
+      details.append(summary, options);
+      cell.append(details);
+    } else {
+      const input = document.createElement("input");
+      input.type = "search";
+      input.placeholder = "Filter…";
+      input.setAttribute("aria-label", `Filter ${label}`);
+      input.addEventListener("input", () => { filters[index].value = input.value.trim().toLowerCase(); applyFilters(); });
+      cell.append(input);
+    }
+  });
+
+  const isNumericText = (value) => /^(?:₹\s*)?-?[\d,]+(?:\.\d+)?%?$/.test(value.replace(/\s/g, ""));
+  const numeric = (value) => Number(value.replace(/[^0-9.-]/g, "")) || 0;
+  const formatTotal = (value, sample, label) => {
+    if (sample.includes("₹")) return new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 0}).format(value);
+    if (sample.includes("%")) return `${value.toFixed(1)}%`;
+    if (/aov|average|rate|resolution|csat/i.test(label)) return value.toFixed(1);
+    return new Intl.NumberFormat("en-IN", {maximumFractionDigits: 2}).format(value);
+  };
+  const updateTotals = (visible) => {
+    if (!table.tFoot) table.createTFoot();
+    table.tFoot.replaceChildren();
+    const row = table.tFoot.insertRow();
+    headers.forEach((label, index) => {
+      const cell = document.createElement("th");
+      if (index === 0) cell.textContent = `Filtered total · ${visible.length} row${visible.length === 1 ? "" : "s"}`;
+      else {
+        const values = visible.map((item) => normalizedCell(item, index)).filter(isNumericText);
+        if (values.length >= Math.max(1, Math.ceil(visible.length * .6))) {
+          const numbers = values.map(numeric);
+          const useAverage = values[0]?.includes("%") || /aov|average|rate|resolution|csat/i.test(label);
+          const total = useAverage ? numbers.reduce((a, b) => a + b, 0) / numbers.length : numbers.reduce((a, b) => a + b, 0);
+          cell.textContent = formatTotal(total, values[0] || "", label);
+        }
+      }
+      row.append(cell);
+    });
+  };
+  const applyFilters = () => {
+    const visible = [];
+    bodyRows.forEach((row) => {
+      const matches = filters.every((filter, index) => {
+        const value = normalizedCell(row, index);
+        return filter.type === "multi" ? (!filter.values.size || filter.values.has(value)) : (!filter.value || value.toLowerCase().includes(filter.value));
+      });
+      row.hidden = !matches;
+      if (matches) visible.push(row);
+    });
+    updateTotals(visible);
+  };
+
+  const wrap = table.closest(".table-wrap") || table.parentElement;
+  const toolbar = document.createElement("div");
+  toolbar.className = "excel-view-toolbar";
+  const clear = document.createElement("button");
+  clear.type = "button";
+  clear.className = "outline-button";
+  clear.textContent = "Clear table filters";
+  clear.addEventListener("click", () => {
+    filterRow.querySelectorAll('input[type="search"]').forEach((input) => { input.value = ""; input.dispatchEvent(new Event("input")); });
+    filterRow.querySelectorAll('input[type="checkbox"]:checked').forEach((input) => { input.checked = false; input.dispatchEvent(new Event("change")); });
+  });
+  const download = document.createElement("button");
+  download.type = "button";
+  download.className = "primary-button";
+  download.textContent = "Download this filtered view";
+  download.addEventListener("click", async () => {
+    const visible = bodyRows.filter((row) => !row.hidden).map((row) => [...row.cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()));
+    const totals = table.tFoot?.rows?.[0] ? [...table.tFoot.rows[0].cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()) : [];
+    download.disabled = true;
+    download.textContent = "Preparing Excel…";
+    try {
+      const response = await fetch("/api/export-view.xlsx", {method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""}, body: JSON.stringify({title: table.closest(".panel")?.querySelector("h2")?.textContent || `Filtered report ${tableIndex + 1}`, headers, rows: visible, totals})});
+      if (!response.ok) throw new Error("Export failed");
+      const blob = await response.blob();
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "filtered-report-view.xlsx";
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (_) { window.alert("Unable to prepare this Excel view. Please try again."); }
+    finally { download.disabled = false; download.textContent = "Download this filtered view"; }
+  });
+  toolbar.append(clear, download);
+  if (wrap?.previousElementSibling?.classList.contains("excel-view-toolbar")) return;
+  wrap.before(toolbar);
+  applyFilters();
+});

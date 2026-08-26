@@ -21,7 +21,7 @@ def sales_trend_excel(trend, selection, scope="overall", overall_trend=None):
     sheet = workbook.active
     sheet.title = "Sales & Discount Trend"
     sheet.append(["WBN CRM — Sales & Discount Trend"])
-    scope_label = {"overall": "Wellbeing", "crm": "Team CRM", "nutritionists": "Team Nutritionist"}.get(scope, "Wellbeing")
+    scope_label = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}.get(scope, "Wellbeing Overall")
     sheet.append(["Selected period", selection["start"], selection["end"], "Scope", scope_label])
     sheet.append([])
     if scope == "overall" or not overall_trend:
@@ -65,10 +65,10 @@ def product_report_excel(report, selection, scope="overall"):
     """Export the exact CRM-Admin-excluded product report shown in the portal."""
     workbook = Workbook()
     scope_label = {
-        "overall": "Wellbeing",
+        "overall": "Wellbeing Overall",
         "crm": "Team CRM",
         "nutritionists": "Team Nutritionists",
-    }.get(scope, "Wellbeing")
+    }.get(scope, "Wellbeing Overall")
 
     product_sales = workbook.active
     product_sales.title = "Product Sales"
@@ -132,7 +132,7 @@ def sales_comparison_excel(comparison, selection):
     summary.append(["From", selection["start"], "To", selection["end"], "View", selection["period"]])
     summary.append([])
     summary.append(["Scope", "Selling Price", "Eligible Discount", "MRP", "Discount %", "Orders"])
-    labels = {"overall": "Wellbeing", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
+    labels = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
     for key in ("overall", "crm", "nutritionists"):
         row = comparison[key]
         summary.append([labels[key], row["sales"], row["discounts"], row["mrp"], row["discount_rate"] / 100, row["orders"]])
@@ -186,7 +186,7 @@ def product_comparison_excel(comparison, comparison_products, selection):
     summary.append(["CRM Admin", "Excluded from every Product Report metric"])
     summary.append([])
     summary.append(["Scope", "Product Selling Price", "Quantity Sold", "Eligible Product Discount", "Product MRP", "Discount %", "Orders"])
-    labels = {"overall": "Wellbeing", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
+    labels = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
     for key in ("overall", "crm", "nutritionists"):
         row = comparison[key]
         summary.append([

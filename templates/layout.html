@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <meta name="description" content="Wellbeing Nutrition customer success metrics portal">
   <title>{{ page_title }} | WBN CRM</title>
   <link rel="icon" type="image/png" sizes="128x128" href="{{ url_for('favicon') }}">
@@ -13,11 +14,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='scorecard.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-7') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-8') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-7') }}">
-  <script src="{{ url_for('static', filename='app.js', v='20260826-6') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-8') }}">
+  <script src="{{ url_for('static', filename='app.js', v='20260826-8') }}" defer></script>
 </head>
 <body>
   <div class="app-shell">

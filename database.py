@@ -889,10 +889,6 @@ def seed_shopify_employees(employees):
 def replace_shopify_sales(start_date, end_date, rows):
     now = utc_now()
     with db_connection() as db:
-        db.execute(
-            "DELETE FROM shopify_sales_daily WHERE day BETWEEN ? AND ?",
-            (start_date, end_date),
-        )
         db.executemany(
             """INSERT INTO shopify_sales_daily
                (day, employee_key, source_employee_name, total_sales, gross_sales, discounts, order_count, synced_at)
@@ -913,13 +909,16 @@ def replace_shopify_sales(start_date, end_date, rows):
                 for row in rows
             ],
         )
+        db.execute(
+            "DELETE FROM shopify_sales_daily WHERE day BETWEEN ? AND ? AND synced_at <> ?",
+            (start_date, end_date, now),
+        )
     return len(rows)
 
 
 def replace_shopify_product_sales(start_date, end_date, rows):
     now = utc_now()
     with db_connection() as db:
-        db.execute("DELETE FROM shopify_product_sales_daily WHERE day BETWEEN ? AND ?", (start_date, end_date))
         db.executemany(
             """INSERT INTO shopify_product_sales_daily
                (day, employee_key, source_employee_name, product_title, product_sku,
@@ -935,13 +934,16 @@ def replace_shopify_product_sales(start_date, end_date, rows):
                  synced_at=excluded.synced_at""",
             [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), float(row.get("gross_sales") or 0), float(row.get("discounts") or 0), int(row["order_count"]), int(row.get("quantity_sold") or 0), now) for row in rows],
         )
+        db.execute(
+            "DELETE FROM shopify_product_sales_daily WHERE day BETWEEN ? AND ? AND synced_at <> ?",
+            (start_date, end_date, now),
+        )
     return len(rows)
 
 
 def replace_shopify_order_details(start_date, end_date, rows):
     now = utc_now()
     with db_connection() as db:
-        db.execute("DELETE FROM shopify_order_details WHERE local_date BETWEEN ? AND ?", (start_date, end_date))
         db.executemany(
             """INSERT INTO shopify_order_details
                (order_id, order_name, order_number, created_at, local_date,
@@ -967,6 +969,10 @@ def replace_shopify_order_details(start_date, end_date, rows):
                 row.get("currency_code"), row.get("source_name"), row.get("employee_key"),
                 row.get("source_employee_name"), now,
             ) for row in rows],
+        )
+        db.execute(
+            "DELETE FROM shopify_order_details WHERE local_date BETWEEN ? AND ? AND synced_at <> ?",
+            (start_date, end_date, now),
         )
     return len(rows)
 
@@ -1213,15 +1219,16 @@ def shopify_customer_sales_coverage():
 def replace_shopify_customer_sales_daily(start_date, end_date, rows):
     now = utc_now()
     with db_connection() as db:
-        db.execute(
-            "DELETE FROM shopify_customer_sales_daily WHERE day BETWEEN ? AND ?",
-            (start_date, end_date),
-        )
         db.executemany(
             """INSERT INTO shopify_customer_sales_daily
                (day, customer_id, customer_email, customer_name,
                 employee_key, source_employee_name, order_count, total_sales, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(day, customer_id, customer_email, customer_name, employee_key, source_employee_name)
+               DO UPDATE SET
+                 order_count=excluded.order_count,
+                 total_sales=excluded.total_sales,
+                 synced_at=excluded.synced_at""",
             [(
                 str(row.get("day") or "")[:10], str(row.get("customer_id") or ""),
                 str(row.get("customer_email") or "").strip(),
@@ -1231,6 +1238,10 @@ def replace_shopify_customer_sales_daily(start_date, end_date, rows):
                 int(float(row.get("order_count") or 0)),
                 float(row.get("total_sales") or 0), now,
             ) for row in rows],
+        )
+        db.execute(
+            "DELETE FROM shopify_customer_sales_daily WHERE day BETWEEN ? AND ? AND synced_at <> ?",
+            (start_date, end_date, now),
         )
     return len(rows)
 

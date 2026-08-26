@@ -1,0 +1,6 @@
+<section class="panel management-panel sales-fulfilment-panel">
+  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER OUTCOMES</span><h2>Total, delivered, cancelled, returned and pending orders</h2><p class="panel-description">Each Shopify parent order is counted once after reconciling all Uniware sub-orders and item states.</p></div></div>
+  <div class="table-wrap"><table class="readable-table"><thead><tr><th>Scope</th><th>Total orders</th><th>Delivered</th><th>Cancelled</th><th>Returned</th><th>Pending</th><th>Exact matches</th><th>Missing Uniware match</th></tr></thead><tbody>
+    {% for row in sales_fulfilment_rows %}{% set check=row.fulfilment.reconciliation %}<tr><td><strong>{{ row.scope_label }}</strong></td><td><a class="cell-drill" href="{{ url_for('customer_loyalty', scope=row.scope, year=selection.year, month=selection.month[5:7]) }}">{{ row.fulfilment.total|number }}</a></td>{% for bucket in row.buckets %}<td><a class="cell-drill" href="{{ url_for('customer_loyalty', scope=row.scope, year=selection.year, month=selection.month[5:7], status=bucket) }}">{{ row.fulfilment.summary[bucket]|number }}</a></td>{% endfor %}<td>{{ check.matched_orders|number }}</td><td>{{ check.shopify_missing_uniware|number }}</td></tr>{% endfor %}
+  </tbody></table></div>
+</section>
