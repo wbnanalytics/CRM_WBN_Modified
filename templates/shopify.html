@@ -12,6 +12,7 @@
     </span>
     <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download Excel</a>
     <a class="outline-button" href="{{ url_for('sales_dashboard_details', detail='employee', period=period, date=selected_date, month=selected_month, year=selected_year, agent=selected_agent) }}">Underlying data</a>
+    <a class="outline-button" href="{{ url_for('sales_dashboard_details', detail='orders', period=period, date=selected_date, month=selected_month, year=selected_year) }}">Order/customer/payment data</a>
   </div>
 </section>
 

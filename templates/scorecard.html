@@ -4,7 +4,7 @@
 <section class="scorecard-page">
   <div class="page-heading scorecard-heading">
     <div><span class="eyebrow">PERFORMANCE</span><h1>CRM Scorecard</h1><p>Agent KPIs, monthly scorecards and annual appraisals in one workspace.</p></div>
-    <span class="status large {{ 'configured' if email_configured else 'needs_setup' }}"><i></i>{{ 'Email ready' if email_configured else 'Email setup pending' }}</span>
+    <div class="heading-actions"><a class="outline-button export-button" href="{{ url_for('download_scorecard_register') }}">Download Excel</a><span class="status large {{ 'configured' if email_configured else 'needs_setup' }}"><i></i>{{ 'Email ready' if email_configured else 'Email setup pending' }}</span></div>
   </div>
 
   <nav class="scorecard-tabs" aria-label="Scorecard sections">

@@ -1,7 +1,7 @@
 {% extends "layout.html" %}
 {% block content %}
 <section class="page-heading source-heading">
-  <div><span class="eyebrow">CS METRIC / {{ source.name|upper }}</span><h1>{{ source.name }}</h1><p>{{ source.description }}</p></div>
+  <div><span class="eyebrow">CS METRIC / {{ source.name|upper }}</span><h1>{{ source.name }}</h1><p>{{ source.description }}</p></div><div class="heading-actions"><a class="primary-button" href="{{ url_for('download_zoho_report', department=department_key, preset=preset, start=start, end=end) if source_key == 'zoho' else url_for('download_bik_report', report=bik_report, preset=preset, start=start, end=end) }}">Download filtered Excel</a></div>
 </section>
 <div class="source-filter-row">{% include '_date_filter.html' %}</div>
 <section class="metric-grid source-metrics">

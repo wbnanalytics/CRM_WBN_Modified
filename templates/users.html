@@ -2,7 +2,7 @@
 {% block content %}
 <section class="page user-management-page">
   <div class="page-heading">
-    <div><span class="eyebrow">ADMINISTRATION</span><h1>User Management</h1><p>Control who can sign in with their Wellbeing Nutrition Microsoft account.</p></div>
+    <div><span class="eyebrow">ADMINISTRATION</span><h1>User Management</h1><p>Control who can sign in with their Wellbeing Nutrition Microsoft account.</p></div><div class="heading-actions"><a class="outline-button export-button" data-user-export href="{{ url_for('download_users') }}">Download filtered Excel</a></div>
   </div>
 
   <div class="user-admin-grid">
@@ -40,5 +40,5 @@
     </section>
   </div>
 </section>
-<script>document.querySelector('[data-user-search]')?.addEventListener('input',function(){const q=this.value.trim().toLowerCase();document.querySelectorAll('[data-user-row]').forEach(row=>row.hidden=q&&!row.dataset.search.includes(q));});</script>
+<script>document.querySelector('[data-user-search]')?.addEventListener('input',function(){const q=this.value.trim().toLowerCase();document.querySelectorAll('[data-user-row]').forEach(row=>row.hidden=q&&!row.dataset.search.includes(q));const link=document.querySelector('[data-user-export]');if(link){const url=new URL(link.href);q?url.searchParams.set('q',q):url.searchParams.delete('q');link.href=url;}});</script>
 {% endblock %}

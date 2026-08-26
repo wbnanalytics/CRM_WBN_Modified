@@ -173,6 +173,25 @@ def init_db():
                 PRIMARY KEY (day, employee_key, product_title, product_sku)
             );
 
+            CREATE TABLE IF NOT EXISTS shopify_order_details (
+                order_id TEXT PRIMARY KEY,
+                order_name TEXT NOT NULL,
+                order_number TEXT,
+                created_at TEXT NOT NULL,
+                local_date TEXT NOT NULL,
+                customer_name TEXT,
+                customer_email TEXT,
+                customer_phone TEXT,
+                payment_type TEXT NOT NULL DEFAULT 'Other',
+                payment_gateways TEXT,
+                financial_status TEXT,
+                total_price REAL NOT NULL DEFAULT 0,
+                total_discounts REAL NOT NULL DEFAULT 0,
+                currency_code TEXT,
+                source_name TEXT,
+                synced_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS shopify_employee_config (
                 employee_key TEXT PRIMARY KEY,
                 source_name TEXT NOT NULL,
@@ -410,6 +429,8 @@ def init_db():
                 ON shopify_sales_daily(day);
             CREATE INDEX IF NOT EXISTS idx_shopify_product_sales_day
                 ON shopify_product_sales_daily(day, employee_key);
+            CREATE INDEX IF NOT EXISTS idx_shopify_orders_local_date
+                ON shopify_order_details(local_date, payment_type, financial_status);
             CREATE INDEX IF NOT EXISTS idx_shopify_targets_period
                 ON shopify_sales_targets(period_type, period_start);
             CREATE INDEX IF NOT EXISTS idx_attendance_records_date
@@ -817,6 +838,63 @@ def replace_shopify_product_sales(start_date, end_date, rows):
             [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), float(row.get("gross_sales") or 0), float(row.get("discounts") or 0), int(row["order_count"]), int(row.get("quantity_sold") or 0), now) for row in rows],
         )
     return len(rows)
+
+
+def replace_shopify_order_details(start_date, end_date, rows):
+    now = utc_now()
+    with db_connection() as db:
+        db.execute("DELETE FROM shopify_order_details WHERE local_date BETWEEN ? AND ?", (start_date, end_date))
+        db.executemany(
+            """INSERT INTO shopify_order_details
+               (order_id, order_name, order_number, created_at, local_date,
+                customer_name, customer_email, customer_phone, payment_type,
+                payment_gateways, financial_status, total_price, total_discounts,
+                currency_code, source_name, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(order_id) DO UPDATE SET
+                 order_name=excluded.order_name, order_number=excluded.order_number,
+                 created_at=excluded.created_at, local_date=excluded.local_date,
+                 customer_name=excluded.customer_name, customer_email=excluded.customer_email,
+                 customer_phone=excluded.customer_phone, payment_type=excluded.payment_type,
+                 payment_gateways=excluded.payment_gateways, financial_status=excluded.financial_status,
+                 total_price=excluded.total_price, total_discounts=excluded.total_discounts,
+                 currency_code=excluded.currency_code, source_name=excluded.source_name,
+                 synced_at=excluded.synced_at""",
+            [(
+                row["order_id"], row["order_name"], row.get("order_number"), row["created_at"], row["local_date"],
+                row.get("customer_name"), row.get("customer_email"), row.get("customer_phone"),
+                row.get("payment_type") or "Other", row.get("payment_gateways"), row.get("financial_status"),
+                float(row.get("total_price") or 0), float(row.get("total_discounts") or 0),
+                row.get("currency_code"), row.get("source_name"), now,
+            ) for row in rows],
+        )
+    return len(rows)
+
+
+def shopify_orders_between(start_date, end_date, payment_type="", financial_status="", search=""):
+    clauses = ["local_date BETWEEN ? AND ?"]
+    params = [start_date, end_date]
+    if payment_type:
+        clauses.append("payment_type = ?")
+        params.append(payment_type)
+    if financial_status:
+        clauses.append("financial_status = ?")
+        params.append(financial_status)
+    if search:
+        token = f"%{search.strip()}%"
+        clauses.append("(order_name LIKE ? OR order_number LIKE ? OR customer_name LIKE ? OR customer_email LIKE ? OR customer_phone LIKE ? OR payment_gateways LIKE ?)")
+        params.extend([token] * 6)
+    with db_connection() as db:
+        rows = db.execute(
+            f"""SELECT order_id, order_name, order_number, created_at, local_date,
+                       customer_name, customer_email, customer_phone, payment_type,
+                       payment_gateways, financial_status, total_price, total_discounts,
+                       currency_code, source_name, synced_at
+                FROM shopify_order_details WHERE {' AND '.join(clauses)}
+                ORDER BY created_at DESC, order_name DESC""",
+            params,
+        ).fetchall()
+    return [dict(row) for row in rows]
 
 
 def shopify_product_sales_between(start_date, end_date):

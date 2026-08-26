@@ -1,7 +1,6 @@
 import argparse
 import html
 import os
-import re
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -16,7 +15,7 @@ from sales_celebration_mailer import (
 )
 from scorecard_mailer import send_html_email
 from scorecard_service import list_agents
-from shopify_service import sales_report
+from shopify_service import _employee_identity, sales_report
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -37,7 +36,7 @@ FIXED_CC = [
 
 
 def _normalize(value):
-    return re.sub(r"[^a-z0-9]", "", (value or "").casefold())
+    return _employee_identity(value)[0]
 
 
 def _email_directory():
@@ -185,8 +184,6 @@ def send_target_achievers(today):
         if not row.get("include_in_team") or row.get("attainment") is None or row["attainment"] < 1:
             continue
         recipient = directory.get(_normalize(row["display_name"]))
-        if not recipient:
-            continue
         content = f"""<div style="padding:20px;border-radius:14px;background:#f5f8f0;border-left:5px solid #b8db42">
           <strong style="font-size:20px;color:#123f33">{html.escape(row['display_name'])}</strong>
           <p style="margin:8px 0 0;color:#52675d">Sales <b>{_inr(row['total'])}</b> · Target <b>{_inr(row['total_target'])}</b> · Attainment <b>{row['attainment']*100:.1f}%</b></p>

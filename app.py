@@ -18,7 +18,7 @@ from database import (
     get_portal_permissions, get_portal_user, get_setting, grant_permission_to_all_users, init_db, latest_sync_request,
     list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
     save_portal_user, set_portal_permissions, set_setting, shopify_targets_between, zoho_metrics,
-    shopify_product_sales_between, shopify_sales_between,
+    shopify_orders_between, shopify_product_sales_between, shopify_sales_between,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
@@ -30,6 +30,7 @@ from attendance_service import attendance_month, attendance_period, set_attendan
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
 from management_dashboard_service import sales_management, cs_management
+from portal_export import attendance_planner_workbook, source_metrics_workbook, workbook_from_tables
 
 
 load_dotenv()
@@ -509,13 +510,22 @@ def download_cs_dashboard():
     )
 
 
-def _shopify_underlying_rows(selection, employee_key=""):
+def _shopify_underlying_rows(selection, employee_key="", payment_type="", financial_status="", search=""):
     employee_rows = shopify_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
     product_rows = shopify_product_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
+    order_rows = shopify_orders_between(
+        selection["start"].isoformat(), selection["end"].isoformat(),
+        payment_type=payment_type, financial_status=financial_status, search=search,
+    )
     if employee_key:
         employee_rows = [row for row in employee_rows if row["employee_key"] == employee_key]
         product_rows = [row for row in product_rows if row["employee_key"] == employee_key]
-    return employee_rows, product_rows
+        order_rows = []  # Shopify restricts order-to-staff attribution without read_users scope.
+    if search:
+        token = search.casefold()
+        employee_rows = [row for row in employee_rows if token in " ".join(str(row.get(key) or "") for key in ("day", "display_name", "source_employee_name", "role")).casefold()]
+        product_rows = [row for row in product_rows if token in " ".join(str(row.get(key) or "") for key in ("day", "display_name", "source_employee_name", "role", "product_title", "product_sku")).casefold()]
+    return employee_rows, product_rows, order_rows
 
 
 @app.route("/dashboard/sales/details")
@@ -523,14 +533,25 @@ def _shopify_underlying_rows(selection, employee_key=""):
 def sales_dashboard_details():
     selection = selected_reporting_period("monthly")
     employee_key = request.args.get("agent", "").strip()
-    employee_rows, product_rows = _shopify_underlying_rows(selection, employee_key)
+    payment_type = request.args.get("payment_type", "").strip()
+    financial_status = request.args.get("financial_status", "").strip()
+    search = request.args.get("q", "").strip()
+    employee_rows, product_rows, order_rows = _shopify_underlying_rows(
+        selection, employee_key, payment_type, financial_status, search,
+    )
     detail = request.args.get("detail", "employee")
-    if detail not in {"employee", "product"}:
+    if detail not in {"employee", "product", "orders"}:
         abort(400)
+    if detail == "orders":
+        return render_template(
+            "sales_orders.html", active_page="dashboard", page_title="Shopify order underlying data",
+            selection=selection, order_rows=order_rows, employee_key=employee_key,
+            payment_type=payment_type, financial_status=financial_status, search=search,
+        )
     return render_template(
         "sales_details.html", active_page="dashboard", page_title="Sales underlying data",
-        selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows,
-        employee_key=employee_key,
+        selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows, order_rows=order_rows,
+        employee_key=employee_key, payment_type=payment_type, financial_status=financial_status, search=search,
     )
 
 
@@ -539,9 +560,17 @@ def sales_dashboard_details():
 def download_sales_details():
     selection = selected_reporting_period("monthly")
     employee_key = request.args.get("agent", "").strip()
-    employee_rows, product_rows = _shopify_underlying_rows(selection, employee_key)
+    payment_type = request.args.get("payment_type", "").strip()
+    financial_status = request.args.get("financial_status", "").strip()
+    search = request.args.get("q", "").strip()
+    employee_rows, product_rows, order_rows = _shopify_underlying_rows(
+        selection, employee_key, payment_type, financial_status, search,
+    )
     return send_file(
-        sales_underlying_excel(employee_rows, product_rows, selection["start"], selection["end"], employee_key),
+        sales_underlying_excel(
+            employee_rows, product_rows, selection["start"], selection["end"], employee_key,
+            order_rows=order_rows, payment_type=payment_type, financial_status=financial_status, search=search,
+        ),
         as_attachment=True,
         download_name=f"shopify-underlying-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -607,6 +636,21 @@ def zoho():
     return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, detailed_metrics=[detailed["channels"]["email"], detailed["channels"]["inbound"]], departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
 
 
+@app.route("/zoho.xlsx")
+def download_zoho_report():
+    start, end, _preset = selected_range()
+    department_key = request.args.get("department", "customer_experience")
+    if not can_access(f"zoho.{department_key}"):
+        abort(403)
+    department = ZOHO_DEPARTMENTS.get(department_key, ZOHO_DEPARTMENTS["customer_experience"])
+    metrics = zoho_metrics(start.isoformat(), end.isoformat(), department["id"])
+    return send_file(
+        source_metrics_workbook("Zoho Desk", metrics, start, end, department["name"]), as_attachment=True,
+        download_name=f"zoho-{department_key}-{start.isoformat()}-{end.isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.route("/bik")
 def bik():
     if not (can_access("bik.customer_tickets") or can_access("bik.all_conversations")):
@@ -619,6 +663,24 @@ def bik():
     metrics = bik_metrics(start.isoformat(), end.isoformat()) if report_key == "customer_tickets" else bik_conversation_metrics(start.isoformat(), end.isoformat())
     detailed = cs_dashboard(start.isoformat(), end.isoformat())
     return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, detailed_metrics=[detailed["channels"]["chats"], detailed["channels"]["orm"]], bik_report=report_key, allowed_bik_reports=allowed_reports, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
+
+
+@app.route("/bik.xlsx")
+def download_bik_report():
+    if not (can_access("bik.customer_tickets") or can_access("bik.all_conversations")):
+        abort(403)
+    start, end, _preset = selected_range()
+    report_key = request.args.get("report", "customer_tickets")
+    if report_key == "all_conversations" and not can_access("bik.all_conversations"):
+        abort(403)
+    if report_key != "all_conversations" and not can_access("bik.customer_tickets"):
+        abort(403)
+    metrics = bik_conversation_metrics(start.isoformat(), end.isoformat()) if report_key == "all_conversations" else bik_metrics(start.isoformat(), end.isoformat())
+    return send_file(
+        source_metrics_workbook("BIK", metrics, start, end, report_key.replace("_", " ").title()), as_attachment=True,
+        download_name=f"bik-{report_key}-{start.isoformat()}-{end.isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.route("/shopify")
@@ -659,6 +721,22 @@ def attendance():
     return render_template(
         "attendance.html", active_page="attendance", page_title="Attendance Planner",
         report=report, selected_month=anchor.strftime("%Y-%m"), today=today,
+    )
+
+
+@app.route("/attendance.xlsx")
+@permission_required("attendance.view")
+def download_attendance_planner():
+    today = datetime.now(IST).date()
+    try:
+        anchor = date.fromisoformat(f"{request.args.get('month', today.strftime('%Y-%m'))}-01")
+    except (TypeError, ValueError):
+        anchor = date(today.year, today.month, 1)
+    report = attendance_month(anchor, today)
+    return send_file(
+        attendance_planner_workbook(report), as_attachment=True,
+        download_name=f"attendance-planner-{anchor.strftime('%Y-%m')}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -865,6 +943,26 @@ def scorecard():
         agents=scorecards.list_agents(), templates=scorecards.list_templates(),
         scorecard_rows=scorecards.list_scorecards(), appraisals=scorecards.list_appraisals(),
         dashboard=scorecards.dashboard_data(), email_configured=scorecard_email_ready(),
+    )
+
+
+@app.route("/scorecard.xlsx")
+def download_scorecard_register():
+    if not can_access_scorecard():
+        abort(403)
+    tables = []
+    if can_access("scorecard.agents"):
+        tables.append(("Agents", scorecards.list_agents(), [("emp_id", "Employee ID"), ("name", "Name"), ("email", "Email"), ("department", "Department"), ("start_date", "Start Date"), ("active", "Active")]))
+    if can_access("scorecard.scorecards"):
+        tables.append(("Scorecards", scorecards.list_scorecards(), [("employee_name", "Employee"), ("emp_id", "Employee ID"), ("department", "Department"), ("evaluation_date", "Evaluation Date"), ("score_pct", "Score %"), ("status", "Status")]))
+    if can_access("scorecard.appraisals"):
+        tables.append(("Appraisals", scorecards.list_appraisals(), [("employee_name", "Employee"), ("period_label", "Period"), ("review_date", "Review Date"), ("kpi_rating_5", "KPI /5"), ("behaviour_rating_5", "Behaviour /5"), ("total_rating_10", "Total /10"), ("overall_band", "Band")]))
+    if not tables:
+        tables.append(("Summary", [], [("message", "No downloadable modules are assigned")]))
+    return send_file(
+        workbook_from_tables("WBN CRM — Scorecard Register", {"Access": "Current signed-in user"}, tables),
+        as_attachment=True, download_name="wbn-crm-scorecard-register.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -1088,6 +1186,22 @@ def manage_users():
         users=[dict(user, permissions=get_portal_permissions(user["email"])) for user in list_portal_users()],
         primary_admin=PRIMARY_ADMIN_EMAIL, permission_options=PORTAL_PERMISSIONS,
         business_roles=("CS", "Sales", "Nutritionist", "Unassigned"),
+    )
+
+
+@app.route("/admin/users.xlsx")
+@admin_required
+def download_users():
+    search = request.args.get("q", "").strip().casefold()
+    rows = [dict(user, permissions=", ".join(get_portal_permissions(user["email"]))) for user in list_portal_users()]
+    if search:
+        rows = [row for row in rows if search in " ".join(str(row.get(key) or "") for key in ("display_name", "email", "role", "business_role", "active", "permissions")).casefold()]
+    return send_file(
+        workbook_from_tables(
+            "WBN CRM — User Management", {"Search": search or "All users"},
+            [("Users", rows, [("display_name", "Display Name"), ("email", "Email"), ("role", "Access Level"), ("business_role", "Business Team"), ("active", "Active"), ("permissions", "Permissions")])],
+        ), as_attachment=True, download_name="wbn-crm-users-filtered.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

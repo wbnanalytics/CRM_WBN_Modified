@@ -6,6 +6,7 @@
   <div><span class="eyebrow">WORKFORCE / ATTENDANCE</span><h1>Attendance Planner</h1><p>Monthly CRM attendance with the complete historical workbook carried forward.</p></div>
   <div class="heading-actions">
     <span class="status large"><i></i>Updated {{ report.last_updated|ist_datetime }}</span>
+    <a class="outline-button export-button" href="{{ url_for('download_attendance_planner', month=selected_month) }}">Download filtered Excel</a>
     <form class="attendance-month-filter" method="get"><label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label><button class="filter-button" type="submit">Apply</button><a class="reset-filter" href="{{ url_for('attendance') }}">Reset</a></form>
   </div>
 </section>

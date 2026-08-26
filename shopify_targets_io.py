@@ -159,7 +159,8 @@ def performance_excel(report, product_field="all", product_query=""):
     return output
 
 
-def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key=""):
+def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key="", order_rows=None,
+                           payment_type="", financial_status="", search=""):
     book = Workbook()
     summary = book.active
     summary.title = "Daily Employee Data"
@@ -188,8 +189,28 @@ def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key
         selling = float(row.get("total_sales") or 0)
         mrp = selling + discount
         product.append([row.get("day"), row.get("employee_key"), row.get("display_name"), row.get("source_employee_name"), row.get("role"), row.get("product_title"), row.get("product_sku"), int(row.get("quantity_sold") or 0), mrp, discount, selling, int(row.get("order_count") or 0), discount / mrp if mrp else 0, row.get("synced_at")])
-    for sheet in (summary, product):
-        header_row = 4 if sheet is summary else 1
+    orders = book.create_sheet("Order Customer Payment")
+    orders.append(["WELLBEING NUTRITION — FILTERED SHOPIFY ORDER DATA"])
+    orders.merge_cells("A1:P1")
+    orders["A1"].fill = PatternFill("solid", fgColor=FOREST)
+    orders["A1"].font = Font(color="FFFFFF", bold=True, size=14)
+    orders.append(["From", start, "To", end, "Payment type", payment_type or "All", "Financial status", financial_status or "All", "Search", search or "None"])
+    orders.append([])
+    orders.append(["Date", "Created At", "Order ID", "Shopify Numeric ID", "Customer Name", "Customer Email", "Customer Phone", "Payment Type", "Payment Gateway", "Payment Status", "Selling Price", "Discount", "MRP", "Currency", "Source", "Synced At"])
+    for cell in orders[4]:
+        cell.fill = PatternFill("solid", fgColor=LIME)
+        cell.font = Font(bold=True)
+    for row in order_rows or []:
+        total = float(row.get("total_price") or 0)
+        discount = float(row.get("total_discounts") or 0)
+        orders.append([
+            row.get("local_date"), row.get("created_at"), row.get("order_name"), row.get("order_number"),
+            row.get("customer_name"), row.get("customer_email"), row.get("customer_phone"),
+            row.get("payment_type"), row.get("payment_gateways"), row.get("financial_status"),
+            total, discount, total + discount, row.get("currency_code"), row.get("source_name"), row.get("synced_at"),
+        ])
+    for sheet in (summary, product, orders):
+        header_row = 4 if sheet in (summary, orders) else 1
         sheet.freeze_panes = f"A{header_row + 1}"
         sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
         for column in sheet.columns:
@@ -204,6 +225,9 @@ def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key
             cell.number_format = '₹#,##0.00'
     for cell in product["M"][1:]:
         cell.number_format = "0.0%"
+    for row in orders.iter_rows(min_row=5, min_col=11, max_col=13):
+        for cell in row:
+            cell.number_format = '₹#,##0.00'
     output = BytesIO()
     book.save(output)
     output.seek(0)

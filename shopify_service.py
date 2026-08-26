@@ -9,7 +9,8 @@ import requests
 
 from database import (
     finish_sync_run, latest_shopify_sync, list_shopify_employees,
-    replace_shopify_product_sales, replace_shopify_sales, seed_shopify_employees, shopify_product_sales_between, shopify_sales_between,
+    replace_shopify_order_details, replace_shopify_product_sales, replace_shopify_sales,
+    seed_shopify_employees, shopify_orders_between, shopify_product_sales_between, shopify_sales_between,
     shopify_sales_summary, shopify_targets_between, start_sync_run,
 )
 
@@ -148,6 +149,82 @@ def _shopifyql_all(token, query, page_size=1000):
             raise ShopifyError("Shopify returned more than 25,000 grouped rows; reduce the sync date range")
 
 
+def _admin_graphql(token, query, variables=None):
+    response = requests.post(
+        f"https://{_store_handle()}.myshopify.com/admin/api/{API_VERSION}/graphql.json",
+        headers={"X-Shopify-Access-Token": token, "Content-Type": "application/json"},
+        json={"query": query, "variables": variables or {}}, timeout=90,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if payload.get("errors"):
+        raise ShopifyError("; ".join(item.get("message", "Shopify query failed") for item in payload["errors"]))
+    return payload.get("data") or {}
+
+
+def _payment_type(gateways, financial_status, tags):
+    text = " ".join([*(gateways or []), *(tags or [])]).casefold().replace("_", " ")
+    if "cash on delivery" in text or re.search(r"\bcod\b", text):
+        return "COD"
+    if financial_status in {"PAID", "AUTHORIZED", "PARTIALLY_PAID", "PARTIALLY_REFUNDED", "REFUNDED"}:
+        return "Prepaid"
+    return "Other / Pending"
+
+
+def _shopify_orders(token, start, end):
+    query = """query Orders($search: String!, $after: String) {
+      orders(first: 250, query: $search, after: $after, sortKey: CREATED_AT) {
+        nodes {
+          id legacyResourceId name createdAt email phone displayFinancialStatus
+          paymentGatewayNames sourceName tags
+          currentTotalPriceSet { shopMoney { amount currencyCode } }
+          currentTotalDiscountsSet { shopMoney { amount currencyCode } }
+          customer {
+            displayName
+            defaultEmailAddress { emailAddress }
+            defaultPhoneNumber { phoneNumber }
+          }
+        }
+        pageInfo { hasNextPage endCursor }
+      }
+    }"""
+    search = f"created_at:>={start.isoformat()} created_at:<{(end + timedelta(days=1)).isoformat()}"
+    after = None
+    rows = []
+    while True:
+        connection = _admin_graphql(token, query, {"search": search, "after": after})["orders"]
+        for order in connection["nodes"]:
+            created = datetime.fromisoformat(order["createdAt"].replace("Z", "+00:00"))
+            local_date = created.astimezone(IST).date()
+            if local_date < start or local_date > end:
+                continue
+            customer = order.get("customer") or {}
+            email_address = (customer.get("defaultEmailAddress") or {}).get("emailAddress")
+            phone_number = (customer.get("defaultPhoneNumber") or {}).get("phoneNumber")
+            total_money = ((order.get("currentTotalPriceSet") or {}).get("shopMoney") or {})
+            discount_money = ((order.get("currentTotalDiscountsSet") or {}).get("shopMoney") or {})
+            gateways = order.get("paymentGatewayNames") or []
+            rows.append({
+                "order_id": order["id"], "order_name": order["name"],
+                "order_number": str(order.get("legacyResourceId") or ""),
+                "created_at": order["createdAt"], "local_date": local_date.isoformat(),
+                "customer_name": customer.get("displayName") or "",
+                "customer_email": order.get("email") or email_address or "",
+                "customer_phone": order.get("phone") or phone_number or "",
+                "payment_type": _payment_type(gateways, order.get("displayFinancialStatus"), order.get("tags")),
+                "payment_gateways": ", ".join(gateways),
+                "financial_status": order.get("displayFinancialStatus") or "",
+                "total_price": float(total_money.get("amount") or 0),
+                "total_discounts": float(discount_money.get("amount") or 0),
+                "currency_code": total_money.get("currencyCode") or discount_money.get("currencyCode") or "INR",
+                "source_name": order.get("sourceName") or "",
+            })
+        page_info = connection["pageInfo"]
+        if not page_info["hasNextPage"]:
+            return rows
+        after = page_info["endCursor"]
+
+
 def _month_chunks(start, end):
     cursor = start
     while cursor <= end:
@@ -248,6 +325,14 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                 "quantity_sold": item["quantity_sold"],
             } for (day, employee_key, title, sku), item in product_combined.items()]
             replace_shopify_product_sales(chunk_start.isoformat(), chunk_end.isoformat(), product_rows)
+            order_rows = _shopify_orders(token, chunk_start, chunk_end)
+            received += len(order_rows)
+            previous_orders = shopify_orders_between(chunk_start.isoformat(), chunk_end.isoformat())
+            if previous_orders and not order_rows:
+                raise ShopifyError(
+                    f"Shopify returned an empty order snapshot for {chunk_start} to {chunk_end}; existing order data was preserved"
+                )
+            saved += replace_shopify_order_details(chunk_start.isoformat(), chunk_end.isoformat(), order_rows)
         finish_sync_run(run_id, "success", received, saved)
         return {"run_id": run_id, "rows_received": received, "rows_saved": saved}
     except Exception as exc:
