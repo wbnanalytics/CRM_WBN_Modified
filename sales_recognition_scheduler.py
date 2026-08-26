@@ -1,5 +1,4 @@
 import argparse
-import calendar
 import html
 import os
 import re
@@ -11,7 +10,9 @@ from dotenv import load_dotenv
 from attendance_service import attendance_period
 from database import db_connection, list_portal_users, list_shopify_employees, utc_now
 from sales_celebration_mailer import (
-    _email_shell, _inr, _name_chips, _period_rankings, ranking_email,
+    _celebration_animation_path, _email_shell, _inr, _name_chips,
+    _perfect_attendance_animation_path, _period_rankings, ranking_email,
+    _target_achiever_animation_path,
 )
 from scorecard_mailer import send_html_email
 from scorecard_service import list_agents
@@ -27,6 +28,11 @@ ALWAYS_TO = [
 FIXED_CC = [
     "varun.c@wellbeingnutrition.com",
     "alcantro@wellbeingnutrition.com",
+    "ravindra@wellbeingnutrition.com",
+    "adina@wellbeingnutrition.com",
+    "shezana.bhojani@wellbeingnutrition.com",
+    "yash.sawant@wellbeingnutrition.com",
+    "shareena.dsilva@wellbeingnutrition.com",
 ]
 
 
@@ -89,7 +95,7 @@ def _record_sent(event_key, email_type, period_label, recipients):
         )
 
 
-def _send_once(event_key, email_type, period_label, subject, body, _event_recipients):
+def _send_once(event_key, email_type, period_label, subject, body, _event_recipients, inline_media=None):
     # Recognition messages always go to the CRM leadership group.  Every active
     # member of the Shopify/CRM roster is copied dynamically, so newly-added
     # team members are included without changing this scheduler.
@@ -105,7 +111,13 @@ def _send_once(event_key, email_type, period_label, subject, body, _event_recipi
     ))
     send_html_email(
         subject, body, html.unescape(subject), recipients, cc=cc,
-        inline_images={"wbn-logo": _logo_path()},
+        inline_images={
+            "wbn-logo": _logo_path(),
+            ("perfect-attendance-animation" if email_type == "perfect_attendance" else ("target-achiever-animation" if email_type == "daily_target" else "celebration-animation")):
+                (_perfect_attendance_animation_path() if email_type == "perfect_attendance" else (_target_achiever_animation_path() if email_type == "daily_target" else _celebration_animation_path())),
+            **(inline_media or {}),
+        },
+        require_graph=True,
     )
     _record_sent(event_key, email_type, period_label, recipients)
     print(f"SENT {event_key} -> {','.join(recipients)}")
@@ -124,6 +136,7 @@ def send_ranking(kind, start, end):
     return _send_once(
         event_key, f"top3_{kind}", f"{start.isoformat()}:{end.isoformat()}",
         message["subject"], message["body"], recipients,
+        inline_media=message.get("inline_media"),
     )
 
 
@@ -135,13 +148,6 @@ def _first_working_day(year, month):
     day = date(year, month, 1)
     while not _is_working_day(day):
         day += timedelta(days=1)
-    return day
-
-
-def _last_working_day(year, month):
-    day = date(year, month, calendar.monthrange(year, month)[1])
-    while not _is_working_day(day):
-        day -= timedelta(days=1)
     return day
 
 
@@ -163,7 +169,7 @@ def send_perfect_attendance(today):
     body = _email_shell(
         "Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
         "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-        content, label,
+        content, label, animation_cid="perfect-attendance-animation",
     )
     return _send_once(
         f"perfect-attendance:{prior_start:%Y-%m}", "perfect_attendance", label,
@@ -188,7 +194,7 @@ def send_target_achievers(today):
         body = _email_shell(
             "Daily Sales Target Achieved", "MILESTONE CELEBRATION",
             "Congratulations! You have reached your assigned sales target for today. Your focus and execution set a strong benchmark for the team.",
-            content, today.strftime("%d %b %Y"),
+            content, today.strftime("%d %b %Y"), animation_cid="target-achiever-animation",
         )
         if _send_once(
             f"target:daily:{today.isoformat()}:{row['employee_key']}", "daily_target",
@@ -209,13 +215,10 @@ def run(mode, now=None):
             send_ranking("daily", yesterday, yesterday)
         if today == _first_working_day(today.year, today.month):
             send_perfect_attendance(today)
-    elif mode == "weekly" and today.weekday() == 4:
-        send_ranking("weekly", today - timedelta(days=6), today)
-    elif mode == "closing":
-        if today == _last_working_day(today.year, today.month):
-            send_ranking("monthly", date(today.year, today.month, 1), today)
-        if today.month == 12 and today.day == 31:
-            send_ranking("yearly", date(today.year, 1, 1), today)
+    elif mode in {"weekly", "closing"}:
+        # Retain compatibility with any old VM timer until deployment removes it,
+        # but never send the discontinued weekly/monthly/yearly ranking emails.
+        print(f"DISABLED recognition mode: {mode}")
     elif mode == "targets":
         send_target_achievers(today)
 

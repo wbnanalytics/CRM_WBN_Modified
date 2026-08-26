@@ -12,13 +12,11 @@ def _business_group(role, name=""):
     role_text = (role or "").casefold()
     name_text = (name or "").casefold()
     if "nutrition" in role_text:
-        return "Nutritionists"
+        return "WBN – Nutritionists"
     if "admin" in role_text or "replacement" in role_text:
         return "CRM Admin / Replacement"
-    if "sales" in role_text:
-        return "Sales Team"
-    if any(word in role_text for word in ("crm - cs", "limechat", "calls", "emails", "orm", "quality", "coach")):
-        return "Customer Success"
+    if role_text in {"cs", "customer success"} or "sales" in role_text or any(word in role_text for word in ("crm - cs", "limechat", "calls", "emails", "orm", "quality", "coach")):
+        return "Team CRM"
     if "crm admin" in name_text:
         return "CRM Admin / Replacement"
     return "Other / Unassigned"
@@ -32,7 +30,7 @@ def sales_management(report):
         sales = float(row.get("total") or 0)
         orders = int(row.get("orders") or 0)
         discounts = abs(float(row.get("discounts") or 0))
-        gross_sales = float(row.get("gross_sales") or 0)
+        gross_sales = sales + discounts
         groups[group]["sales"] += sales
         groups[group]["orders"] += orders
         groups[group]["people"] += 1
@@ -43,7 +41,7 @@ def sales_management(report):
         all_discounts += discounts
         all_gross_sales += gross_sales
 
-    order = ("Sales Team", "Nutritionists", "Customer Success", "CRM Admin / Replacement", "Other / Unassigned")
+    order = ("Team CRM", "WBN – Nutritionists", "CRM Admin / Replacement", "Other / Unassigned")
     split = []
     for name in order:
         values = groups[name]
@@ -51,28 +49,57 @@ def sales_management(report):
             "name": name,
             "aov": values["sales"] / values["orders"] if values["orders"] else 0,
             "share": values["sales"] / all_sales * 100 if all_sales else 0,
+            "mrp": values["sales"] + values["discounts"],
+            "discount_rate": values["discounts"] / (values["sales"] + values["discounts"]) * 100 if values["sales"] + values["discounts"] else 0,
         })
         split.append(dict(values))
 
-    products = []
-    for row in report.get("team_product_rows", [])[:12]:
-        products.append({
-            "product": row.get("product_title") or "Unspecified product",
-            "sku": row.get("product_sku") or "—",
-            "quantity": int(row.get("quantity") or 0),
-            "sales": float(row.get("total") or 0),
-            "orders": int(row.get("orders") or 0),
+    product_totals = defaultdict(lambda: {"sales": 0.0, "discounts": 0.0, "orders": 0, "quantity": 0})
+    product_agents = []
+    for row in report.get("product_rows", []):
+        key = (row.get("product_title") or "Unspecified product", row.get("product_sku") or "—")
+        slot = product_totals[key]
+        slot["sales"] += float(row.get("total") or 0)
+        slot["discounts"] += abs(float(row.get("discounts") or 0))
+        slot["orders"] += int(row.get("orders") or 0)
+        slot["quantity"] += int(row.get("quantity") or 0)
+        product_agents.append({
+            "employee": row.get("display_name") or "Unassigned", "role": row.get("role") or "Unassigned",
+            "product": key[0], "sku": key[1], "sales": float(row.get("total") or 0),
+            "discounts": abs(float(row.get("discounts") or 0)),
+            "mrp": float(row.get("total") or 0) + abs(float(row.get("discounts") or 0)),
+            "orders": int(row.get("orders") or 0), "quantity": int(row.get("quantity") or 0),
         })
+    products = [{
+        "product": key[0], "sku": key[1], "sales": values["sales"],
+        "discounts": values["discounts"], "mrp": values["sales"] + values["discounts"],
+        "orders": values["orders"], "quantity": values["quantity"],
+    } for key, values in product_totals.items()]
+    products.sort(key=lambda row: (-row["discounts"], -row["sales"], row["product"]))
+    product_agents.sort(key=lambda row: (-row["discounts"], -row["sales"], row["employee"], row["product"]))
+
+    trend = []
+    for index, column in enumerate(report.get("columns", [])):
+        sales_value = sum(float(row.get("values", [0])[index] or 0) for row in report.get("rows", []) if row.get("include_in_team"))
+        discount_value = sum(abs(float(row.get("discount_values", [0])[index] or 0)) for row in report.get("rows", []) if row.get("include_in_team"))
+        trend.append({"label": column["label"], "sales": sales_value, "discounts": discount_value, "mrp": sales_value + discount_value})
+    trend_max = max((max(row["sales"], row["discounts"]) for row in trend), default=0) or 1
+    for row in trend:
+        row["sales_pct"] = row["sales"] / trend_max * 100
+        row["discount_pct"] = row["discounts"] / trend_max * 100
     return {
         "sales": all_sales,
         "orders": all_orders,
         "aov": all_sales / all_orders if all_orders else 0,
         "split": split,
         "products": products,
+        "product_agents": product_agents,
+        "trend": trend,
         "discount_available": all_gross_sales > 0,
         "discounts": all_discounts,
-        "gross_sales": all_gross_sales,
-        "discount_rate": all_discounts / all_gross_sales * 100 if all_gross_sales else 0,
+        "gross_sales": all_sales + all_discounts,
+        "mrp": all_sales + all_discounts,
+        "discount_rate": all_discounts / (all_sales + all_discounts) * 100 if all_sales + all_discounts else 0,
         "unassigned_sales": groups["Other / Unassigned"]["sales"],
     }
 

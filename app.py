@@ -18,13 +18,14 @@ from database import (
     get_portal_permissions, get_portal_user, get_setting, grant_permission_to_all_users, init_db, latest_sync_request,
     list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
     save_portal_user, set_portal_permissions, set_setting, shopify_targets_between, zoho_metrics,
+    shopify_product_sales_between, shopify_sales_between,
 )
 from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
 from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
-from shopify_targets_io import performance_excel, read_target_upload, target_template
+from shopify_targets_io import performance_excel, read_target_upload, sales_underlying_excel, target_template
 from attendance_service import attendance_month, attendance_period, set_attendance, set_employee_profile, set_leave_balance
 from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel
@@ -504,6 +505,45 @@ def download_cs_dashboard():
     return send_file(
         cs_dashboard_excel(report), as_attachment=True,
         download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _shopify_underlying_rows(selection, employee_key=""):
+    employee_rows = shopify_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
+    product_rows = shopify_product_sales_between(selection["start"].isoformat(), selection["end"].isoformat())
+    if employee_key:
+        employee_rows = [row for row in employee_rows if row["employee_key"] == employee_key]
+        product_rows = [row for row in product_rows if row["employee_key"] == employee_key]
+    return employee_rows, product_rows
+
+
+@app.route("/dashboard/sales/details")
+@permission_required("dashboard")
+def sales_dashboard_details():
+    selection = selected_reporting_period("monthly")
+    employee_key = request.args.get("agent", "").strip()
+    employee_rows, product_rows = _shopify_underlying_rows(selection, employee_key)
+    detail = request.args.get("detail", "employee")
+    if detail not in {"employee", "product"}:
+        abort(400)
+    return render_template(
+        "sales_details.html", active_page="dashboard", page_title="Sales underlying data",
+        selection=selection, detail=detail, employee_rows=employee_rows, product_rows=product_rows,
+        employee_key=employee_key,
+    )
+
+
+@app.route("/dashboard/sales/details.xlsx")
+@permission_required("dashboard")
+def download_sales_details():
+    selection = selected_reporting_period("monthly")
+    employee_key = request.args.get("agent", "").strip()
+    employee_rows, product_rows = _shopify_underlying_rows(selection, employee_key)
+    return send_file(
+        sales_underlying_excel(employee_rows, product_rows, selection["start"], selection["end"], employee_key),
+        as_attachment=True,
+        download_name=f"shopify-underlying-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -1077,7 +1117,7 @@ def update_user():
     else:
         role = request.form.get("role", existing["role"])
         save_portal_user(
-            email, existing.get("display_name"), role,
+            email, request.form.get("display_name", existing.get("display_name")), role,
             request.form.get("active") == "1", session["user"]["email"],
             request.form.get("business_role", existing.get("business_role") or "Unassigned"),
         )

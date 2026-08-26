@@ -165,6 +165,8 @@ def init_db():
                 product_title TEXT NOT NULL,
                 product_sku TEXT NOT NULL DEFAULT '',
                 total_sales REAL NOT NULL DEFAULT 0,
+                gross_sales REAL NOT NULL DEFAULT 0,
+                discounts REAL NOT NULL DEFAULT 0,
                 order_count INTEGER NOT NULL DEFAULT 0,
                 quantity_sold INTEGER NOT NULL DEFAULT 0,
                 synced_at TEXT NOT NULL,
@@ -434,6 +436,13 @@ def init_db():
             db.execute("ALTER TABLE shopify_sales_daily ADD COLUMN gross_sales REAL NOT NULL DEFAULT 0")
         if "discounts" not in sales_columns:
             db.execute("ALTER TABLE shopify_sales_daily ADD COLUMN discounts REAL NOT NULL DEFAULT 0")
+        product_sales_columns = {
+            row["name"] for row in db.execute("PRAGMA table_info(shopify_product_sales_daily)").fetchall()
+        }
+        if "gross_sales" not in product_sales_columns:
+            db.execute("ALTER TABLE shopify_product_sales_daily ADD COLUMN gross_sales REAL NOT NULL DEFAULT 0")
+        if "discounts" not in product_sales_columns:
+            db.execute("ALTER TABLE shopify_product_sales_daily ADD COLUMN discounts REAL NOT NULL DEFAULT 0")
         portal_user_columns = {
             row["name"] for row in db.execute("PRAGMA table_info(portal_users)").fetchall()
         }
@@ -795,15 +804,17 @@ def replace_shopify_product_sales(start_date, end_date, rows):
         db.executemany(
             """INSERT INTO shopify_product_sales_daily
                (day, employee_key, source_employee_name, product_title, product_sku,
-                total_sales, order_count, quantity_sold, synced_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                total_sales, gross_sales, discounts, order_count, quantity_sold, synced_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(day, employee_key, product_title, product_sku) DO UPDATE SET
                  source_employee_name=excluded.source_employee_name,
                  total_sales=excluded.total_sales,
+                 gross_sales=excluded.gross_sales,
+                 discounts=excluded.discounts,
                  order_count=excluded.order_count,
                  quantity_sold=excluded.quantity_sold,
                  synced_at=excluded.synced_at""",
-            [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), int(row["order_count"]), int(row.get("quantity_sold") or 0), now) for row in rows],
+            [(row["day"], row["employee_key"], row["source_employee_name"], row["product_title"], row.get("product_sku") or "", float(row["total_sales"]), float(row.get("gross_sales") or 0), float(row.get("discounts") or 0), int(row["order_count"]), int(row.get("quantity_sold") or 0), now) for row in rows],
         )
     return len(rows)
 
@@ -814,7 +825,9 @@ def shopify_product_sales_between(start_date, end_date):
             """SELECT p.day, p.employee_key,
                       COALESCE(c.display_name, p.source_employee_name) AS display_name,
                       COALESCE(c.role, 'Unassigned') AS role,
-                      p.product_title, p.product_sku, p.total_sales, p.order_count, p.quantity_sold
+                      p.source_employee_name, p.product_title, p.product_sku,
+                      p.total_sales, p.gross_sales, p.discounts, p.order_count,
+                      p.quantity_sold, p.synced_at
                FROM shopify_product_sales_daily p
                LEFT JOIN shopify_employee_config c ON c.employee_key=p.employee_key
                WHERE p.day BETWEEN ? AND ?

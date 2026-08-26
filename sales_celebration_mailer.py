@@ -48,12 +48,6 @@ def _period_rankings(start, end):
     return sorted(rows, key=lambda row: (-row["sales"], row["name"].casefold()))
 
 
-def _last_completed_week(today):
-    days_since_friday = (today.weekday() - 4) % 7
-    end = today - timedelta(days=days_since_friday or 7)
-    return end - timedelta(days=6), end
-
-
 def _ranking_rows(rows, limit=3):
     colors = ("#d9ef78", "#dcebe3", "#f2e8ce")
     result = []
@@ -68,6 +62,65 @@ def _ranking_rows(rows, limit=3):
             f'<br><span style="color:#77867f;font-size:12px">{row.get("orders", 0):,} orders</span></td></tr>'
         )
     return "".join(result)
+
+
+def _full_report_rows(rows):
+    result = []
+    total_sales = 0.0
+    total_orders = 0
+    for index, row in enumerate(rows, 1):
+        total_sales += float(row.get("sales") or 0)
+        total_orders += int(row.get("orders") or 0)
+        shade = "#f7f9f5" if index % 2 == 0 else "#ffffff"
+        result.append(
+            f'<tr style="background:{shade}"><td style="padding:10px 8px;border-bottom:1px solid #e8ece5;color:#6f8077">{index}</td>'
+            f'<td style="padding:10px 8px;border-bottom:1px solid #e8ece5"><strong style="color:#14251f">{html.escape(row["name"])}</strong>'
+            f'<br><span style="color:#77867f;font-size:11px">{html.escape(row.get("role") or "CRM Team")}</span></td>'
+            f'<td style="padding:10px 8px;border-bottom:1px solid #e8ece5;text-align:right;color:#52675d">{int(row.get("orders") or 0):,}</td>'
+            f'<td style="padding:10px 8px;border-bottom:1px solid #e8ece5;text-align:right"><strong style="color:#123f33">{_inr(row.get("sales") or 0)}</strong></td></tr>'
+        )
+    result.append(
+        f'<tr style="background:#edf5e9"><td style="padding:12px 8px" colspan="2"><strong style="color:#123f33">Team total</strong></td>'
+        f'<td style="padding:12px 8px;text-align:right"><strong style="color:#123f33">{total_orders:,}</strong></td>'
+        f'<td style="padding:12px 8px;text-align:right"><strong style="color:#123f33">{_inr(total_sales)}</strong></td></tr>'
+    )
+    return "".join(result)
+
+
+def _full_report_section(title, period_label, rows, eyebrow="FULL TEAM REPORT"):
+    return f'''<div style="margin-top:28px">
+      <div style="margin-bottom:12px"><div style="font-size:11px;font-weight:800;letter-spacing:1.4px;color:#6e7f75;text-transform:uppercase">{html.escape(eyebrow)}</div>
+      <h2 style="margin:5px 0 2px;font-size:21px;color:#123f33">{html.escape(title)}</h2>
+      <div style="font-size:12px;color:#75847d">{html.escape(period_label)}</div></div>
+      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="border:1px solid #e1e8de;border-radius:12px;overflow:hidden">
+        <tr style="background:#123f33;color:#fff"><th style="padding:10px 8px;text-align:left;font-size:11px">#</th><th style="padding:10px 8px;text-align:left;font-size:11px">EMPLOYEE</th><th style="padding:10px 8px;text-align:right;font-size:11px">ORDERS</th><th style="padding:10px 8px;text-align:right;font-size:11px">SALES</th></tr>
+        {_full_report_rows(rows)}
+      </table>
+    </div>'''
+
+
+def _celebration_media(content_id="celebration-animation"):
+    return f'''<div style="margin:0 0 24px;padding:18px 20px;border-radius:14px;background:#edf5e9;border:1px solid #dbe8d8;text-align:center">
+      <div style="font-size:11px;font-weight:800;letter-spacing:1.6px;color:#5d7569;text-transform:uppercase">A moment for the team</div>
+      <div style="margin:6px 0 14px;font-size:20px;font-weight:800;color:#123f33">Consistency deserves celebration ✨</div>
+      <img src="cid:{html.escape(content_id)}" width="480" alt="Team celebration" style="display:block;width:100%;max-width:480px;height:auto;margin:auto;border-radius:12px;border:0;background:#123f33">
+      <div style="margin-top:10px;font-size:11px;color:#718078">Wellbeing Nutrition · Team CRM</div>
+    </div>'''
+
+
+def _celebration_animation_path():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-celebration.gif")
+    return path if os.path.exists(path) else None
+
+
+def _perfect_attendance_animation_path():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-perfect-attendance.gif")
+    return path if os.path.exists(path) else None
+
+
+def _target_achiever_animation_path():
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "email-target-achiever.gif")
+    return path if os.path.exists(path) else None
 
 
 def _name_chips(names):
@@ -88,7 +141,7 @@ def _signature():
         </td></tr></table></div>"""
 
 
-def _email_shell(title, eyebrow, intro, content, period_label):
+def _email_shell(title, eyebrow, intro, content, period_label, animation_cid="celebration-animation"):
     return f"""<!doctype html><html><body style="margin:0;background:#f4f5ef;font-family:Arial,Helvetica,sans-serif;color:#263a31">
     <div style="display:none;max-height:0;overflow:hidden">A Team CRM celebration from Wellbeing Nutrition.</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f5ef"><tr><td align="center" style="padding:28px 12px">
@@ -99,7 +152,7 @@ def _email_shell(title, eyebrow, intro, content, period_label):
           <h1 style="font-size:30px;line-height:1.18;margin:10px 0 8px;color:#fff">{html.escape(title)}</h1>
           <div style="display:inline-block;background:#d9ef78;color:#123f33;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:800">{html.escape(period_label)}</div>
         </td></tr>
-        <tr><td style="padding:30px 34px"><p style="font-size:16px;line-height:1.65;margin:0 0 22px;color:#40564c">{intro}</p>
+        <tr><td style="padding:30px 34px">{_celebration_media(animation_cid)}<p style="font-size:16px;line-height:1.65;margin:0 0 22px;color:#40564c">{intro}</p>
           {content}{_signature()}
         </td></tr>
         <tr><td style="background:#edf3e9;padding:13px 34px;color:#6a7b73;font-size:11px;text-align:center">Internal recognition · Team CRM · Wellbeing Nutrition</td></tr>
@@ -108,81 +161,66 @@ def _email_shell(title, eyebrow, intro, content, period_label):
 
 
 def ranking_email(kind, start, end, test=False):
-    labels = {
-        "daily": start.strftime("%d %b %Y"),
-        "weekly": f"{start:%d %b} – {end:%d %b %Y}",
-        "monthly": start.strftime("%B %Y"),
-        "yearly": str(start.year),
-    }
-    titles = {
-        "daily": "Yesterday’s Top 3 Sales Performers",
-        "weekly": "Top 3 Performers of the Week",
-        "monthly": "Top 3 Performers of the Month",
-        "yearly": "Top 3 Performers of the Year",
-    }
-    subjects = {
-        "daily": f"Congratulations! 🎉 Yesterday’s Top 3 Sales Performers | {labels['daily']}",
-        "weekly": f"Congratulations! 🎉 Weekly Sales Champions | Week Ending {end:%d %b %Y}",
-        "monthly": f"Congratulations! 🎉 Monthly Sales Champions | {labels['monthly']}",
-        "yearly": f"Congratulations! 🎉 Annual Sales Champions | {labels['yearly']}",
-    }
-    rows = [row for row in _period_rankings(start, end) if row["sales"] > 0]
+    if kind != "daily":
+        raise ValueError("Weekly, monthly, and yearly ranking emails are discontinued")
+    label = start.strftime("%d %b %Y")
+    title = "Yesterday’s Top 3 Sales Performers"
+    subject = f"Congratulations! 🎉 Yesterday’s Top 3 Sales Performers | {label}"
+    all_rows = _period_rankings(start, end)
+    rows = [row for row in all_rows if row["sales"] > 0]
     content = f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0">{_ranking_rows(rows)}</table>'
+    inline_media = {}
+    if kind == "daily":
+        month_start = date(end.year, end.month, 1)
+        month_rows = _period_rankings(month_start, end)
+        crm_daily = [row for row in all_rows if "nutrition" not in (row.get("role") or "").casefold()]
+        nutrition_daily = [row for row in all_rows if "nutrition" in (row.get("role") or "").casefold()]
+        crm_month = [row for row in month_rows if "nutrition" not in (row.get("role") or "").casefold()]
+        nutrition_month = [row for row in month_rows if "nutrition" in (row.get("role") or "").casefold()]
+        content = (
+            content
+            + _full_report_section("Team CRM · Yesterday’s sales", label, crm_daily, "TEAM CRM · SALES & CUSTOMER SUCCESS")
+            + _full_report_section("WBN – Nutritionists · Yesterday’s sales", label, nutrition_daily, "WBN – NUTRITIONISTS")
+            + _full_report_section(
+                "Team CRM · Month-to-date sales",
+                f"{month_start:%d %b} – {end:%d %b %Y}",
+                crm_month,
+                "TEAM CRM · SALES & CUSTOMER SUCCESS",
+            )
+            + _full_report_section(
+                "WBN – Nutritionists · Month-to-date sales",
+                f"{month_start:%d %b} – {end:%d %b %Y}",
+                nutrition_month,
+                "WBN – NUTRITIONISTS",
+            )
+        )
+        animation_path = _celebration_animation_path()
+        if animation_path:
+            inline_media["celebration-animation"] = animation_path
     prefix = "[TEST – APPROVAL REQUIRED] " if test else ""
     return {
         "key": kind,
-        "subject": prefix + subjects[kind],
+        "subject": prefix + subject,
         "body": _email_shell(
-            titles[kind], "SALES RECOGNITION",
+            title, "SALES RECOGNITION",
             "Congratulations to our outstanding performers. Your consistency, ownership, and customer focus made this achievement possible.",
-            content, labels[kind],
+            content, label,
         ),
         "rows": rows[:3],
+        "inline_media": inline_media,
     }
 
 
 def build_samples(today=None):
     today = today or date.today()
     yesterday = today - timedelta(days=1)
-    week_start, week_end = _last_completed_week(today)
     month_start = date(today.year, today.month, 1)
     prior_month_end = month_start - timedelta(days=1)
     prior_month_start = date(prior_month_end.year, prior_month_end.month, 1)
-    prior_year = today.year - 1
-    periods = {
-        "daily": (yesterday, yesterday),
-        "weekly": (week_start, week_end),
-        "monthly": (prior_month_start, prior_month_end),
-        "yearly": (date(prior_year, 1, 1), date(prior_year, 12, 31)),
-    }
     samples = []
-    labels = {
-        "daily": yesterday.strftime("%d %b %Y"),
-        "weekly": f"{week_start:%d %b} – {week_end:%d %b %Y}",
-        "monthly": prior_month_start.strftime("%B %Y"),
-        "yearly": str(prior_year),
-    }
-    titles = {
-        "daily": "Yesterday’s Top 3 Sales Performers",
-        "weekly": "Top 3 Performers of the Week",
-        "monthly": "Top 3 Performers of the Month",
-        "yearly": "Top 3 Performers of the Year",
-    }
-    subjects = {
-        "daily": f"Congratulations! 🎉 Yesterday’s Top 3 Sales Performers | {labels['daily']}",
-        "weekly": f"Congratulations! 🎉 Weekly Sales Champions | Week Ending {week_end:%d %b %Y}",
-        "monthly": f"Congratulations! 🎉 Monthly Sales Champions | {labels['monthly']}",
-        "yearly": f"Congratulations! 🎉 Annual Sales Champions | {labels['yearly']}",
-    }
-    for key in ("daily", "weekly", "monthly", "yearly"):
-        rows = _period_rankings(*periods[key])
-        content = f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0">{_ranking_rows(rows)}</table>'
-        body = _email_shell(
-            titles[key], "SALES RECOGNITION",
-            "Congratulations to our outstanding performers. Your consistency, ownership, and customer focus made this achievement possible.",
-            content, labels[key],
-        )
-        samples.append({"key": key, "subject": "[TEST – APPROVAL REQUIRED] " + subjects[key], "body": body})
+    monthly_label = prior_month_start.strftime("%B %Y")
+    daily_sample = ranking_email("daily", yesterday, yesterday, test=True)
+    samples.append(daily_sample)
 
     attendance = attendance_period(prior_month_start, prior_month_end)
     no_leave = [row["employee_name"] for row in attendance["rows"] if row["present"] > 0 and row["planned"] == 0 and row["unplanned"] == 0]
@@ -192,10 +230,10 @@ def build_samples(today=None):
     )
     samples.append({
         "key": "perfect_attendance",
-        "subject": f"[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Perfect Attendance Recognition | {labels['monthly']}",
+        "subject": f"[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Perfect Attendance Recognition | {monthly_label}",
         "body": _email_shell("Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
             "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-            no_leave_content, labels["monthly"]),
+            no_leave_content, monthly_label, animation_cid="perfect-attendance-animation"),
     })
 
     daily_report = sales_report("daily", yesterday)
@@ -219,23 +257,32 @@ def build_samples(today=None):
         "subject": "[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Target Achievers | Daily & Monthly Recognition",
         "body": _email_shell("Target Achievers", "MILESTONE CELEBRATION",
             "Congratulations to the colleagues who met or exceeded their assigned sales target. Your focus and execution set a strong benchmark for the team.",
-            achieved_content, f"Daily {yesterday:%d %b} · Monthly {labels['monthly']}"),
+            achieved_content, f"Daily {yesterday:%d %b} · Monthly {monthly_label}", animation_cid="target-achiever-animation"),
     })
     return samples
 
 
-def send_test_samples(recipient):
+def send_test_samples(recipient, sample_key="all"):
     if recipient.casefold() != IST_TEST_RECIPIENT:
         raise ValueError("Approval samples are hard-locked to varun.c@wellbeingnutrition.com")
     samples = build_samples()
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wbn-logo.png")
     if not os.path.exists(logo_path):
         logo_path = os.path.join(os.getcwd(), "static", "wbn-logo.png")
-    for sample in samples:
+    selected = samples if sample_key == "all" else [sample for sample in samples if sample["key"] == sample_key]
+    if not selected:
+        raise ValueError(f"Unknown sample: {sample_key}")
+    for sample in selected:
         plain = html.unescape(sample["subject"]).replace("[TEST – APPROVAL REQUIRED] ", "")
         send_html_email(
             sample["subject"], sample["body"], plain, [recipient], cc=[],
-            inline_images={"wbn-logo": logo_path},
+            inline_images={
+                "wbn-logo": logo_path,
+                ("perfect-attendance-animation" if sample["key"] == "perfect_attendance" else ("target-achiever-animation" if sample["key"] == "target_achievers" else "celebration-animation")):
+                    (_perfect_attendance_animation_path() if sample["key"] == "perfect_attendance" else (_target_achiever_animation_path() if sample["key"] == "target_achievers" else _celebration_animation_path())),
+                **sample.get("inline_media", {}),
+            },
+            require_graph=True,
         )
         print(f'SENT {sample["key"]} -> {recipient}')
 
@@ -243,8 +290,9 @@ def send_test_samples(recipient):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send approval-only CRM recognition email samples")
     parser.add_argument("--send-tests", metavar="EMAIL")
+    parser.add_argument("--sample", choices=("daily", "perfect_attendance", "target_achievers", "all"), default="all")
     args = parser.parse_args()
     load_dotenv(".env")
     if not args.send_tests:
         parser.error("Use --send-tests varun.c@wellbeingnutrition.com")
-    send_test_samples(args.send_tests)
+    send_test_samples(args.send_tests, args.sample)

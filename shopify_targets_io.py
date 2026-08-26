@@ -64,7 +64,7 @@ def performance_excel(report, product_field="all", product_query=""):
     headers = ["Employee", "Role"]
     for column in report["columns"]:
         headers.extend([f"{column['label']} Sales", f"{column['label']} Target"])
-    headers.extend(["Total Sales", "Orders", "Average Order Value", "Total Target", "Attainment %"])
+    headers.extend(["MRP", "Discount", "Selling Price", "Orders", "Average Order Value", "Total Target", "Attainment %"])
     sheet.append(headers)
     for cell in sheet[4]:
         cell.fill = PatternFill("solid", fgColor=LIME)
@@ -74,7 +74,8 @@ def performance_excel(report, product_field="all", product_query=""):
         values = [employee["display_name"], employee["role"]]
         for index, sales in enumerate(employee["values"]):
             values.extend([sales, employee["targets"][index]])
-        values.extend([employee["total"], employee["orders"], employee["average_order_value"], employee["total_target"], (employee["attainment"] or 0) * 100])
+        discount = abs(float(employee.get("discounts") or 0))
+        values.extend([employee["total"] + discount, discount, employee["total"], employee["orders"], employee["average_order_value"], employee["total_target"], (employee["attainment"] or 0) * 100])
         sheet.append(values)
         fill = "EAF6EC" if employee["performance_band"] == "top" else ("FCEDEA" if employee["performance_band"] == "bottom" else None)
         if fill:
@@ -84,7 +85,8 @@ def performance_excel(report, product_field="all", product_query=""):
         team_values = ["CRM Team", "Managed team"]
         for index, sales in enumerate(report["team"]["values"]):
             team_values.extend([sales, report["team"]["targets"][index]])
-        team_values.extend([report["team"]["total"], report["team"]["orders"], report["team"]["average_order_value"], report["team"]["target"], report["team"]["attainment"] * 100])
+        team_discount = sum(abs(float(row.get("discounts") or 0)) for row in report["rows"] if row.get("include_in_team"))
+        team_values.extend([report["team"]["total"] + team_discount, team_discount, report["team"]["total"], report["team"]["orders"], report["team"]["average_order_value"], report["team"]["target"], report["team"]["attainment"] * 100])
         sheet.append(team_values)
         for cell in sheet[sheet.max_row]:
             cell.font = Font(bold=True)
@@ -100,7 +102,7 @@ def performance_excel(report, product_field="all", product_query=""):
     for index, column in enumerate(sheet.columns, start=1):
         sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 28)
     product_sheet = book.create_sheet("Product by Employee")
-    product_sheet.append(["Employee", "Role", "Product", "SKU", "Quantity Sold", "Sales", "Orders", "Average Order Value"])
+    product_sheet.append(["Employee", "Role", "Product", "SKU", "Quantity Sold", "MRP", "Discount", "Selling Price", "Orders", "Average Order Value"])
     for cell in product_sheet[1]:
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
@@ -118,18 +120,19 @@ def performance_excel(report, product_field="all", product_query=""):
         average_order_value = item.get("average_order_value")
         if average_order_value is None:
             average_order_value = total / orders if orders else 0
+        discount = abs(float(item.get("discounts") or 0))
         product_sheet.append([
             item["display_name"], item["role"], item["product_title"], item["product_sku"],
-            item.get("quantity", 0), total, orders, average_order_value,
+            item.get("quantity", 0), total + discount, discount, total, orders, average_order_value,
         ])
     product_sheet.freeze_panes = "A2"
     product_sheet.auto_filter.ref = product_sheet.dimensions
-    for row in product_sheet.iter_rows(min_row=2, min_col=5, max_col=8):
-        row[1].number_format = row[3].number_format = '₹#,##0.00'
+    for row in product_sheet.iter_rows(min_row=2, min_col=6, max_col=10):
+        row[0].number_format = row[1].number_format = row[2].number_format = row[4].number_format = '₹#,##0.00'
     for index, column in enumerate(product_sheet.columns, start=1):
         product_sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 34)
     team_product_sheet = book.create_sheet("CRM Product Summary")
-    team_product_sheet.append(["Rank", "Product", "SKU", "Quantity Sold", "Sales", "Orders", "Average Order Value"])
+    team_product_sheet.append(["Rank", "Product", "SKU", "Quantity Sold", "MRP", "Discount", "Selling Price", "Orders", "Average Order Value"])
     for cell in team_product_sheet[1]:
         cell.fill = PatternFill("solid", fgColor=LIME)
         cell.font = Font(bold=True)
@@ -139,16 +142,68 @@ def performance_excel(report, product_field="all", product_query=""):
         average_order_value = item.get("average_order_value")
         if average_order_value is None:
             average_order_value = total / orders if orders else 0
+        discount = abs(float(item.get("discounts") or 0))
         team_product_sheet.append([
             rank, item["product_title"], item["product_sku"], item.get("quantity", 0),
-            total, orders, average_order_value,
+            total + discount, discount, total, orders, average_order_value,
         ])
     team_product_sheet.freeze_panes = "A2"
     team_product_sheet.auto_filter.ref = team_product_sheet.dimensions
-    for row in team_product_sheet.iter_rows(min_row=2, min_col=5, max_col=7):
-        row[0].number_format = row[2].number_format = '₹#,##0.00'
+    for row in team_product_sheet.iter_rows(min_row=2, min_col=5, max_col=9):
+        row[0].number_format = row[1].number_format = row[2].number_format = row[4].number_format = '₹#,##0.00'
     for index, column in enumerate(team_product_sheet.columns, start=1):
         team_product_sheet.column_dimensions[get_column_letter(index)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 42)
+    output = BytesIO()
+    book.save(output)
+    output.seek(0)
+    return output
+
+
+def sales_underlying_excel(employee_rows, product_rows, start, end, employee_key=""):
+    book = Workbook()
+    summary = book.active
+    summary.title = "Daily Employee Data"
+    summary.append(["WELLBEING NUTRITION — SHOPIFY UNDERLYING SALES DATA"])
+    summary.merge_cells("A1:K1")
+    summary["A1"].fill = PatternFill("solid", fgColor=FOREST)
+    summary["A1"].font = Font(color="FFFFFF", bold=True, size=14)
+    summary.append(["From", start, "To", end, "Employee filter", employee_key or "All employees"])
+    summary.append([])
+    summary.append(["Date", "Employee Key", "Employee", "Raw Shopify Employee", "Role", "MRP", "Discount", "Selling Price", "Orders", "Discount %", "Synced At"])
+    for cell in summary[4]:
+        cell.fill = PatternFill("solid", fgColor=LIME)
+        cell.font = Font(bold=True)
+    for row in employee_rows:
+        discount = abs(float(row.get("discounts") or 0))
+        selling = float(row.get("total_sales") or 0)
+        mrp = selling + discount
+        summary.append([row.get("day"), row.get("employee_key"), row.get("display_name"), row.get("source_employee_name"), row.get("role"), mrp, discount, selling, int(row.get("order_count") or 0), discount / mrp if mrp else 0, row.get("synced_at")])
+    product = book.create_sheet("Product by Employee")
+    product.append(["Date", "Employee Key", "Employee", "Raw Shopify Employee", "Role", "Product", "SKU", "Quantity", "MRP", "Discount", "Selling Price", "Orders", "Discount %", "Synced At"])
+    for cell in product[1]:
+        cell.fill = PatternFill("solid", fgColor=LIME)
+        cell.font = Font(bold=True)
+    for row in product_rows:
+        discount = abs(float(row.get("discounts") or 0))
+        selling = float(row.get("total_sales") or 0)
+        mrp = selling + discount
+        product.append([row.get("day"), row.get("employee_key"), row.get("display_name"), row.get("source_employee_name"), row.get("role"), row.get("product_title"), row.get("product_sku"), int(row.get("quantity_sold") or 0), mrp, discount, selling, int(row.get("order_count") or 0), discount / mrp if mrp else 0, row.get("synced_at")])
+    for sheet in (summary, product):
+        header_row = 4 if sheet is summary else 1
+        sheet.freeze_panes = f"A{header_row + 1}"
+        sheet.auto_filter.ref = f"A{header_row}:{get_column_letter(sheet.max_column)}{sheet.max_row}"
+        for column in sheet.columns:
+            sheet.column_dimensions[get_column_letter(column[0].column)].width = min(max(len(str(cell.value or "")) for cell in column) + 3, 34)
+    for row in summary.iter_rows(min_row=5, min_col=6, max_col=8):
+        for cell in row:
+            cell.number_format = '₹#,##0.00'
+    for cell in summary["J"][4:]:
+        cell.number_format = "0.0%"
+    for row in product.iter_rows(min_row=2, min_col=9, max_col=11):
+        for cell in row:
+            cell.number_format = '₹#,##0.00'
+    for cell in product["M"][1:]:
+        cell.number_format = "0.0%"
     output = BytesIO()
     book.save(output)
     output.seek(0)

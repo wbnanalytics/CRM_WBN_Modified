@@ -44,6 +44,10 @@ DEFAULT_EMPLOYEES = (
     ("Purvi Gawade", "CRM - CS - Calls", 85313),
     ("Ahanti Vichare", "CRM - Quality Assurance", 0),
     ("Atul Aherwar", "CRM - Team Coach", 0),
+    ("Adina Rakhange", "Nutritionist", 0),
+    ("Shezana Bhojani", "Nutritionist", 0),
+    ("Yash Sawant", "Nutritionist", 0),
+    ("Shareena Dsilva", "Nutritionist", 0),
 )
 
 
@@ -212,14 +216,14 @@ ORDER BY day ASC, staff_member_name ASC"""
                 )
             saved += replace_shopify_sales(chunk_start.isoformat(), chunk_end.isoformat(), rows)
             product_query = f"""FROM sales
-SHOW total_sales, orders, net_items_sold
+SHOW gross_sales, discounts, total_sales, orders, net_items_sold
 TIMESERIES day
 GROUP BY staff_member_name, product_title, product_variant_sku
 SINCE {chunk_start.isoformat()} UNTIL {chunk_end.isoformat()}
 ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku ASC"""
             product_source_rows = _shopifyql_all(token, product_query)
             received += len(product_source_rows)
-            product_combined = defaultdict(lambda: {"total_sales": 0.0, "order_count": 0, "quantity_sold": 0, "source_names": set()})
+            product_combined = defaultdict(lambda: {"total_sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "order_count": 0, "quantity_sold": 0, "source_names": set()})
             for row in product_source_rows:
                 source_name = row.get("staff_member_name")
                 day = str(row.get("day") or "")[:10]
@@ -230,6 +234,8 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                     continue
                 item = product_combined[(day, employee_key, title, sku)]
                 item["total_sales"] += float(row.get("total_sales") or 0)
+                item["gross_sales"] += float(row.get("gross_sales") or 0)
+                item["discounts"] += float(row.get("discounts") or 0)
                 item["order_count"] += int(float(row.get("orders") or 0))
                 item["quantity_sold"] += int(float(row.get("net_items_sold") or 0))
                 item["source_names"].add(str(source_name))
@@ -237,7 +243,8 @@ ORDER BY day ASC, staff_member_name ASC, product_title ASC, product_variant_sku 
                 "day": day, "employee_key": employee_key,
                 "source_employee_name": " / ".join(sorted(item["source_names"])),
                 "product_title": title, "product_sku": sku,
-                "total_sales": item["total_sales"], "order_count": item["order_count"],
+                "total_sales": item["total_sales"], "gross_sales": item["gross_sales"],
+                "discounts": item["discounts"], "order_count": item["order_count"],
                 "quantity_sold": item["quantity_sold"],
             } for (day, employee_key, title, sku), item in product_combined.items()]
             replace_shopify_product_sales(chunk_start.isoformat(), chunk_end.isoformat(), product_rows)
@@ -441,6 +448,7 @@ def sales_report(period="daily", anchor=None, employee_key=""):
     for row in rows:
         row["performance_band"] = "top" if row["employee_key"] in top_keys else ("bottom" if row["employee_key"] in bottom_keys else "")
     team_values = [sum(row["values"][i] for row in team_rows) for i in range(len(columns))]
+    team_discount_values = [sum(abs(float(row["discount_values"][i] or 0)) for row in team_rows) for i in range(len(columns))]
     team_orders = [sum(row["order_values"][i] for row in team_rows) for i in range(len(columns))]
     team_targets = [sum(row["targets"][i] for row in team_rows) for i in range(len(columns))]
     team_target = sum(row["total_target"] for row in team_rows)
@@ -474,23 +482,27 @@ def sales_report(period="daily", anchor=None, employee_key=""):
         (growth_current - growth_previous) / growth_previous
         if growth_previous else None
     )
-    product_summary = defaultdict(lambda: {"sales": 0.0, "orders": 0, "quantity": 0})
+    product_summary = defaultdict(lambda: {"sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "orders": 0, "quantity": 0})
     for item in product_sales:
         if selected_employee and item["employee_key"] != employee_key:
             continue
         slot = product_summary[(item["employee_key"], item["display_name"], item["role"], item["product_title"], item["product_sku"])]
         slot["sales"] += float(item["total_sales"])
+        slot["gross_sales"] += float(item.get("gross_sales") or 0)
+        slot["discounts"] += abs(float(item.get("discounts") or 0))
         slot["orders"] += int(item["order_count"])
         slot["quantity"] += int(item.get("quantity_sold") or 0)
     product_rows = [{
         "employee_key": key[0], "display_name": key[1], "role": key[2],
         "product_title": key[3], "product_sku": key[4], "total": values["sales"],
+        "gross_sales": values["gross_sales"], "discounts": values["discounts"],
+        "mrp": values["sales"] + values["discounts"],
         "orders": values["orders"],
         "quantity": values["quantity"],
         "average_order_value": values["sales"] / values["orders"] if values["orders"] else 0,
     } for key, values in product_summary.items()]
     product_rows.sort(key=lambda item: (item["display_name"], -item["total"], item["product_title"]))
-    team_product_summary = defaultdict(lambda: {"sales": 0.0, "orders": 0, "quantity": 0})
+    team_product_summary = defaultdict(lambda: {"sales": 0.0, "gross_sales": 0.0, "discounts": 0.0, "orders": 0, "quantity": 0})
     included_keys = {
         item["employee_key"] for item in configs.values()
         if item.get("include_in_team") and "nutrition" not in (item.get("role") or "").casefold()
@@ -501,11 +513,15 @@ def sales_report(period="daily", anchor=None, employee_key=""):
         key = (item["product_title"], item["product_sku"])
         slot = team_product_summary[key]
         slot["sales"] += float(item["total_sales"])
+        slot["gross_sales"] += float(item.get("gross_sales") or 0)
+        slot["discounts"] += abs(float(item.get("discounts") or 0))
         slot["orders"] += int(item["order_count"])
         slot["quantity"] += int(item.get("quantity_sold") or 0)
     team_product_rows = [{
         "product_title": key[0], "product_sku": key[1],
-        "total": values["sales"], "orders": values["orders"], "quantity": values["quantity"],
+        "total": values["sales"], "gross_sales": values["gross_sales"],
+        "discounts": values["discounts"], "mrp": values["sales"] + values["discounts"],
+        "orders": values["orders"], "quantity": values["quantity"],
     } for key, values in team_product_summary.items()]
     team_product_rows.sort(key=lambda item: (-item["quantity"], -item["total"], item["product_title"]))
     return {
@@ -523,8 +539,10 @@ def sales_report(period="daily", anchor=None, employee_key=""):
             "change": growth_change,
         },
         "team": {
-            "values": team_values, "targets": team_targets, "orders_by_period": team_orders,
+            "values": team_values, "discount_values": team_discount_values,
+            "targets": team_targets, "orders_by_period": team_orders,
             "total": sum(team_values), "orders": sum(team_orders),
+            "discounts": sum(team_discount_values), "mrp": sum(team_values) + sum(team_discount_values),
             "average_order_value": sum(team_values) / sum(team_orders) if sum(team_orders) else 0,
             "target": team_target,
             "attainment": sum(team_values) / team_target if team_target else 0,

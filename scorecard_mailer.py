@@ -126,7 +126,7 @@ def _send_smtp(subject, body, plain_text, recipient, config, cc=None, inline_ima
         smtp.send_message(message)
 
 
-def send_html_email(subject, body, plain_text, recipients, cc=None, inline_images=None):
+def send_html_email(subject, body, plain_text, recipients, cc=None, inline_images=None, require_graph=False):
     """Send a branded application email through the configured Microsoft 365 mailbox."""
     recipients = [recipients] if isinstance(recipients, str) else list(recipients)
     cc = list(cc or [])
@@ -142,7 +142,7 @@ def send_html_email(subject, body, plain_text, recipients, cc=None, inline_image
         config["sender"] and os.getenv("AZURE_TENANT_ID")
         and os.getenv("AZURE_CLIENT_ID") and os.getenv("AZURE_CLIENT_SECRET")
     )
-    transport = _mail_setting(
+    transport = "graph" if require_graph else _mail_setting(
         "CRM_MAIL_TRANSPORT", "crm_mail_transport",
         default="graph" if graph_ready else "smtp",
     ).lower()
