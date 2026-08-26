@@ -9,9 +9,7 @@ from dotenv import load_dotenv
 from attendance_service import attendance_period
 from database import db_connection, list_portal_users, list_shopify_employees, utc_now
 from sales_celebration_mailer import (
-    _celebration_animation_path, _email_shell, _inr, _name_chips,
-    _perfect_attendance_animation_path, _period_rankings, ranking_email,
-    _target_achiever_animation_path,
+    _email_shell, _inr, _name_chips, _period_rankings, ranking_email,
 )
 from scorecard_mailer import send_html_email
 from scorecard_service import list_agents
@@ -110,12 +108,7 @@ def _send_once(event_key, email_type, period_label, subject, body, _event_recipi
     ))
     send_html_email(
         subject, body, html.unescape(subject), recipients, cc=cc,
-        inline_images={
-            "wbn-logo": _logo_path(),
-            ("perfect-attendance-animation" if email_type == "perfect_attendance" else ("target-achiever-animation" if email_type == "daily_target" else "celebration-animation")):
-                (_perfect_attendance_animation_path() if email_type == "perfect_attendance" else (_target_achiever_animation_path() if email_type == "daily_target" else _celebration_animation_path())),
-            **(inline_media or {}),
-        },
+        inline_images={"wbn-logo": _logo_path()},
         require_graph=True,
     )
     _record_sent(event_key, email_type, period_label, recipients)

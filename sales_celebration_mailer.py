@@ -100,12 +100,7 @@ def _full_report_section(title, period_label, rows, eyebrow="FULL TEAM REPORT"):
 
 
 def _celebration_media(content_id="celebration-animation"):
-    return f'''<div style="margin:0 0 24px;padding:18px 20px;border-radius:14px;background:#edf5e9;border:1px solid #dbe8d8;text-align:center">
-      <div style="font-size:11px;font-weight:800;letter-spacing:1.6px;color:#5d7569;text-transform:uppercase">A moment for the team</div>
-      <div style="margin:6px 0 14px;font-size:20px;font-weight:800;color:#123f33">Consistency deserves celebration ✨</div>
-      <img src="cid:{html.escape(content_id)}" width="480" alt="Team celebration" style="display:block;width:100%;max-width:480px;height:auto;margin:auto;border-radius:12px;border:0;background:#123f33">
-      <div style="margin-top:10px;font-size:11px;color:#718078">Wellbeing Nutrition · Team CRM</div>
-    </div>'''
+    return ""
 
 
 def _celebration_animation_path():
@@ -194,9 +189,6 @@ def ranking_email(kind, start, end, test=False):
                 "WBN – NUTRITIONISTS",
             )
         )
-        animation_path = _celebration_animation_path()
-        if animation_path:
-            inline_media["celebration-animation"] = animation_path
     prefix = "[TEST – APPROVAL REQUIRED] " if test else ""
     return {
         "key": kind,
@@ -276,12 +268,7 @@ def send_test_samples(recipient, sample_key="all"):
         plain = html.unescape(sample["subject"]).replace("[TEST – APPROVAL REQUIRED] ", "")
         send_html_email(
             sample["subject"], sample["body"], plain, [recipient], cc=[],
-            inline_images={
-                "wbn-logo": logo_path,
-                ("perfect-attendance-animation" if sample["key"] == "perfect_attendance" else ("target-achiever-animation" if sample["key"] == "target_achievers" else "celebration-animation")):
-                    (_perfect_attendance_animation_path() if sample["key"] == "perfect_attendance" else (_target_achiever_animation_path() if sample["key"] == "target_achievers" else _celebration_animation_path())),
-                **sample.get("inline_media", {}),
-            },
+            inline_images={"wbn-logo": logo_path},
             require_graph=True,
         )
         print(f'SENT {sample["key"]} -> {recipient}')
