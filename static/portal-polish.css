@@ -161,3 +161,20 @@ body { font-size: 14px; line-height: 1.5; }
 .dashboard-control-row>.detail-filter-form .filter-button{min-height:40px;white-space:nowrap}
 @media(max-width:1100px){.dashboard-control-row>.detail-filter-form{grid-template-columns:repeat(2,minmax(180px,1fr));max-width:none}.dashboard-control-row>.detail-filter-form .filter-button{justify-self:start}}
 @media(max-width:720px){.dashboard-export-row{align-items:stretch;flex-direction:column}.dashboard-export-row a{text-align:center}.dashboard-control-row>.detail-filter-form{display:flex;width:100%}.dashboard-control-row>.detail-filter-form label{min-width:100%}}
+
+.chart-insights{display:flex;flex-wrap:wrap;gap:24px;margin:4px 0 14px;padding:12px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.chart-insights span{display:grid;gap:2px;min-width:170px}
+.chart-insights small{color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+.chart-insights strong{color:var(--ink);font-size:14px}
+.chart-insights b{color:#287248;font-size:12px}
+.combo-chart-scroll{position:relative}
+.chart-hit-area{fill:transparent;pointer-events:all}
+.chart-point:hover .chart-hit-area{fill:rgba(23,76,59,.045)}
+.sales-value-label{fill:#315e4e;font:700 9px "DM Sans",sans-serif;paint-order:stroke;stroke:#fff;stroke-width:3px;stroke-linejoin:round;pointer-events:none}
+.discount-rate-line,.discount-rate-mark{pointer-events:none}
+.sales-chart-tooltip{position:absolute;z-index:8;min-width:225px;padding:11px 13px;border:1px solid #d7e2d8;border-radius:10px;background:#fff;color:var(--ink);box-shadow:0 12px 30px rgba(18,63,51,.18);pointer-events:none;font-size:11px;line-height:1.45}
+.sales-chart-tooltip strong{display:block;margin-bottom:6px;color:#123f33;font-size:12px}
+.sales-chart-tooltip span{display:flex;justify-content:space-between;gap:18px;color:var(--muted)}
+.sales-chart-tooltip i{font-style:normal}
+.sales-chart-tooltip b{color:var(--ink);font-weight:800}
+@media(max-width:720px){.chart-insights{gap:12px}.chart-insights span{min-width:140px}.sales-value-label{display:none}}

@@ -128,3 +128,43 @@ if (productFilter) {
   field.addEventListener("change", applyProductFilter);
   productFilter.querySelector("[data-product-clear]").addEventListener("click", () => { query.value = ""; field.value = "all"; applyProductFilter(); query.focus(); });
 }
+
+const salesChart = document.querySelector("[data-sales-chart]");
+const salesChartTooltip = salesChart?.querySelector("[data-sales-chart-tooltip]");
+if (salesChart && salesChartTooltip) {
+  const money = new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 0});
+  const showSalesPoint = (event) => {
+    const point = event.currentTarget;
+    const rows = [
+      ["Selling price", money.format(Number(point.dataset.sales || 0))],
+      ["Discount", money.format(Number(point.dataset.discount || 0))],
+      ["MRP", money.format(Number(point.dataset.mrp || 0))],
+      ["Effective discount", `${Number(point.dataset.rate || 0).toFixed(2)}%`],
+    ];
+    salesChartTooltip.replaceChildren();
+    const heading = document.createElement("strong");
+    heading.textContent = point.dataset.label || "Sales detail";
+    salesChartTooltip.append(heading);
+    rows.forEach(([label, value]) => {
+      const row = document.createElement("span");
+      const name = document.createElement("i");
+      const amount = document.createElement("b");
+      name.textContent = label;
+      amount.textContent = value;
+      row.append(name, amount);
+      salesChartTooltip.append(row);
+    });
+    salesChartTooltip.hidden = false;
+    const bounds = salesChart.getBoundingClientRect();
+    const tooltipWidth = salesChartTooltip.offsetWidth;
+    const rawLeft = event.clientX - bounds.left + salesChart.scrollLeft + 12;
+    const left = Math.min(rawLeft, salesChart.scrollWidth - tooltipWidth - 8);
+    salesChartTooltip.style.left = `${Math.max(8, left)}px`;
+    salesChartTooltip.style.top = `${Math.max(8, event.clientY - bounds.top + salesChart.scrollTop - 90)}px`;
+  };
+  salesChart.querySelectorAll(".chart-point").forEach((point) => {
+    point.addEventListener("pointerenter", showSalesPoint);
+    point.addEventListener("pointermove", showSalesPoint);
+    point.addEventListener("pointerleave", () => { salesChartTooltip.hidden = true; });
+  });
+}

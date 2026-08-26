@@ -41,13 +41,20 @@ def _sales_discount_chart(trend):
         points.append({
             **row, "x": x, "bar_x": x - bar_width / 2, "bar_y": bottom - bar_height,
             "bar_height": bar_height, "line_y": line_y,
+            "hit_x": left + slot * index, "sales_label": _compact_number(row["sales"]),
         })
+    best_sales = max(trend, key=lambda row: row["sales"], default=None)
+    highest_discount = max(trend, key=lambda row: row["discount_rate"], default=None)
+    active_days = [row for row in trend if row["sales"] or row["discounts"]]
     return {
         "width": chart_width, "height": 350, "left": left, "right": right,
-        "top": top, "bottom": bottom, "bar_width": bar_width, "points": points,
+        "top": top, "bottom": bottom, "bar_width": bar_width, "slot": slot, "points": points,
         "line_points": " ".join(f'{row["x"]:.2f},{row["line_y"]:.2f}' for row in points),
         "sales_ticks": [{"y": bottom - plot_height * i / 5, "label": _compact_number(sales_step * i)} for i in range(6)],
         "rate_ticks": [{"y": bottom - plot_height * i / 5, "label": f"{rate_max * i / 5:.0f}%"} for i in range(6)],
+        "best_sales": best_sales,
+        "highest_discount": highest_discount,
+        "average_sales": sum(row["sales"] for row in active_days) / len(active_days) if active_days else 0,
     }
 
 
