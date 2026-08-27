@@ -1,5 +1,8 @@
 {% extends "layout.html" %}
 {% block content %}
+{% macro loyalty_url(scope, tier='', compare=false, download=false) -%}
+{{ url_for('download_loyalty' if download else 'customer_loyalty', scope=scope, compare=1 if compare else none, period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year, tier=tier, q=report.search) }}
+{%- endmacro %}
 <section class="page-heading loyalty-heading">
   <div>
     <span class="eyebrow">SHOPIFY CUSTOMER INSIGHTS</span>
@@ -14,16 +17,15 @@
 <section class="panel loyalty-filter-panel">
   <div class="loyalty-scope-tabs">
     {% for key, label in report.scopes.items() %}
-    <a class="{{ 'active' if report.scope == key and not loyalty_compare }}" href="{{ url_for('customer_loyalty', scope=key, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">{{ label }}</a>
+    <a class="{{ 'active' if report.scope == key and not loyalty_compare }}" href="{{ loyalty_url(key, report.tier) }}">{{ label }}</a>
     {% endfor %}
-    <a class="{{ 'active' if loyalty_compare }}" href="{{ url_for('customer_loyalty', compare=1, year=report.year, month=report.month, period=report.period) }}">Comparison</a>
+    <a class="{{ 'active' if loyalty_compare }}" href="{{ loyalty_url('overall', compare=true) }}">Comparison</a>
   </div>
   <form method="get" class="loyalty-filter-form">
     <input type="hidden" name="scope" value="{{ report.scope }}">
     {% if loyalty_compare %}<input type="hidden" name="compare" value="1">{% endif %}
-    <label><span>Period</span><select name="period"><option value="">Year / month</option>{% for key, label in report.periods %}<option value="{{ key }}" {{ 'selected' if report.period == key }}>{{ label }}</option>{% endfor %}</select></label>
-    <label><span>Year</span><select name="year">{% for year in report.years %}<option value="{{ year }}" {{ 'selected' if report.year == year }}>{{ year }}</option>{% endfor %}</select></label>
-    <label><span>Month</span><select name="month"><option value="">All months</option>{% for number, label in report.months %}<option value="{{ number }}" {{ 'selected' if report.month == number }}>{{ label }}</option>{% endfor %}</select></label>
+    <label><span>View</span><select name="period" onchange="this.form.submit()">{% for key,label in [('daily','Date'),('weekly','Week'),('monthly','Month'),('yearly','Year')] %}<option value="{{ key }}" {{ 'selected' if selection.period == key }}>{{ label }}</option>{% endfor %}</select></label>
+    {% if selection.period == 'daily' %}<label><span>Date</span><input type="date" name="date" value="{{ selection.date }}"></label>{% elif selection.period == 'weekly' %}<label><span>Week ending</span><input type="date" name="week_end" value="{{ selection.week_end }}"></label>{% elif selection.period == 'monthly' %}<label><span>Month</span><input type="month" name="month" value="{{ selection.month }}"></label>{% else %}<label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selection.year }}>{{ year }}</option>{% endfor %}</select></label>{% endif %}
     {% if not loyalty_compare %}<label><span>Loyalty tier</span><select name="tier"><option value="">All tiers</option>{% for tier in report.tiers %}<option value="{{ tier }}" {{ 'selected' if report.tier == tier }}>{{ tier }}</option>{% endfor %}</select></label>
     <label class="loyalty-search"><span>Search</span><input type="search" name="q" value="{{ report.search }}" placeholder="{{ 'Customer, email or phone' if report.scope == 'overall' else 'Customer, email, phone or agent' }}"></label>{% endif %}
     <button class="filter-button" type="submit">Apply</button>
@@ -42,7 +44,7 @@
   </a>
   {% set tier_notes = {'Loyal':'7+ orders','Regular':'5–6 orders','Repeat':'2–4 orders','One-time':'1 order'} %}
   {% for tier in report.tiers %}
-  <a class="loyalty-tier-card {{ tier|lower|replace('-','') }}" href="{{ url_for('customer_loyalty', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=tier, q=report.search, status=report.status) }}">
+  <a class="loyalty-tier-card {{ tier|lower|replace('-','') }}" href="{{ loyalty_url(report.scope, tier) }}">
     <span>{{ tier }}</span><strong>{{ report.tier_counts[tier]|number }}</strong><small>{{ tier_notes[tier] }}</small>
   </a>
   {% endfor %}
@@ -50,8 +52,8 @@
 
 <section class="panel loyalty-panel" id="customer-directory">
   <div class="panel-head loyalty-panel-head">
-    <div><span class="eyebrow">CUSTOMER DIRECTORY</span><h2>{{ report.customers|length|number }} filtered customers</h2><p class="panel-description">{{ 'Wellbeing Overall uses every Shopify customer and order without requiring agent attribution. ' if report.scope == 'overall' else '' }}Exact normalized email, phone or name can connect customer records. Shopify customer ID remains the strongest identity.</p></div>
-    <div class="view-title-actions"><div class="coverage-note"><b>Customer data coverage</b><span>{{ report.coverage.start_date or 'Not synced' }} – {{ report.coverage.end_date or 'Not synced' }}</span></div><a class="mini-export" href="{{ url_for('download_loyalty', export_view='customers', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download this view</a></div>
+    <div><span class="eyebrow">CUSTOMER DIRECTORY</span><h2>Customers</h2></div>
+    <div class="view-title-actions"><div class="coverage-note"><b>Data coverage</b><span>{{ report.start_date }} – {{ report.end_date }}</span></div></div>
   </div>
   <div class="table-wrap loyalty-table-wrap">
     <table class="readable-table loyalty-customer-table">

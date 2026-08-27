@@ -185,7 +185,6 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   const header = table.tHead.rows[0];
   const headers = [...header.cells].map((cell) => cell.textContent.trim());
   const bodyRows = [...(table.tBodies[0]?.rows || [])].filter((row) => !row.querySelector(".empty-state") && !row.classList.contains("team-member-detail"));
-  if (!bodyRows.length) return;
   let filteredRows = [...bodyRows];
   let currentPage = 1;
   let pageSize = 50;

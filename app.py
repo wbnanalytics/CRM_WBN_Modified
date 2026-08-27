@@ -214,6 +214,15 @@ def selected_reporting_period(default="daily"):
     }
 
 
+def reporting_years(today):
+    """Expose the complete configured reporting history, not a rolling four-year window."""
+    try:
+        first_year = int(os.getenv("REPORTING_START_YEAR", "2020"))
+    except ValueError:
+        first_year = 2020
+    return range(today.year, first_year - 1, -1)
+
+
 def microsoft_ready():
     return all(os.getenv(key) for key in ("AZURE_CLIENT_ID", "AZURE_CLIENT_SECRET", "AZURE_TENANT_ID", "AZURE_REDIRECT_URI"))
 
@@ -491,9 +500,9 @@ def logout():
 @permission_required("dashboard")
 def dashboard():
     seed_default_employees()
-    view = request.args.get("view", "cs")
+    view = request.args.get("view", "sales")
     if view not in {"cs", "sales", "attendance"}:
-        view = "cs"
+        view = "sales"
     selection = selected_reporting_period("daily" if view == "cs" else "monthly")
     report = shopify_sales_report(selection["period"], selection["anchor"])
     managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
@@ -523,7 +532,7 @@ def dashboard():
         top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"], sales_scope=sales_scope, sales_comparison=sales_comparison,
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
-        available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
+        available_years=reporting_years(selection["today"]),
     )
 
 
@@ -827,7 +836,7 @@ def shopify():
         selected_month=anchor.strftime("%Y-%m"), selected_year=anchor.year,
         selected_agent=report["selected_employee"]["employee_key"] if report["selected_employee"] else "",
         week_end_report=week_end_report,
-        available_years=range(today.year, max(today.year - 3, 2024) - 1, -1),
+        available_years=reporting_years(today),
     )
 
 
@@ -872,21 +881,18 @@ def product_report():
         selection=selection, report=report, product_report=products, product_scope=scope,
         product_comparison=product_comparison, comparison_products=comparison_products,
         comparison_max_quantity=comparison_max_quantity,
-        available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
+        available_years=reporting_years(selection["today"]),
     )
 
 
 @app.route("/shopify/orders")
 @permission_required("shopify.view")
 def order_report_view():
+    selection = selected_reporting_period("monthly")
     scope = request.args.get("scope", "overall").strip()
     if scope not in {"overall", "crm", "nutritionists", "comparison"}:
         scope = "overall"
-    common = {
-        "year": request.args.get("year", "").strip(),
-        "month": request.args.get("month", "").strip(),
-        "period": request.args.get("period", "").strip(),
-    }
+    common = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
     comparison = None
     if scope == "comparison":
         comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
@@ -908,7 +914,8 @@ def order_report_view():
     start_index = (page - 1) * per_page
     return render_template(
         "order_report.html", active_page="order_report", page_title="Order Report",
-        report=report, order_scope=scope, order_comparison=comparison,
+        report=report, selection=selection, available_years=reporting_years(selection["today"]),
+        order_scope=scope, order_comparison=comparison,
         page=page, page_count=page_count, per_page=per_page,
         page_orders=all_orders[start_index:start_index + per_page],
         start_index=start_index, total_filtered_orders=len(all_orders),
@@ -918,12 +925,9 @@ def order_report_view():
 @app.route("/shopify/orders.xlsx")
 @permission_required("shopify.view")
 def download_order_report():
+    selection = selected_reporting_period("monthly")
     scope = request.args.get("scope", "overall").strip()
-    common = {
-        "year": request.args.get("year", "").strip(),
-        "month": request.args.get("month", "").strip(),
-        "period": request.args.get("period", "").strip(),
-    }
+    common = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
     if scope == "comparison":
         comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
         report = comparison["overall"]
@@ -986,23 +990,19 @@ def download_product_report():
 @app.route("/shopify/customer-loyalty")
 @permission_required("shopify.view")
 def customer_loyalty():
+    selection = selected_reporting_period("monthly")
     compare = request.args.get("compare", "").strip() == "1"
     report = loyalty_report(
         scope=request.args.get("scope", "overall").strip(),
-        year=request.args.get("year", "").strip(),
-        month=request.args.get("month", "").strip(),
-        period=request.args.get("period", "").strip(),
+        start_date=selection["start"].isoformat(),
+        end_date=selection["end"].isoformat(),
         tier=request.args.get("tier", "").strip(),
         search=request.args.get("q", "").strip(),
         status=request.args.get("status", "").strip(),
     )
     loyalty_comparison = None
     if compare:
-        common = {
-            "year": request.args.get("year", "").strip(),
-            "month": request.args.get("month", "").strip(),
-            "period": request.args.get("period", "").strip(),
-        }
+        common = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
         loyalty_comparison = {
             key: loyalty_report(scope=key, **common)
             for key in ("overall", "crm", "nutritionists")
@@ -1011,21 +1011,19 @@ def customer_loyalty():
         "loyalty.html", active_page="customer_loyalty",
         page_title="Customer Loyalty Intelligence", report=report,
         loyalty_comparison=loyalty_comparison, loyalty_compare=compare,
+        selection=selection, available_years=reporting_years(selection["today"]),
     )
 
 
 @app.route("/shopify/customer-loyalty.xlsx")
 @permission_required("shopify.view")
 def download_loyalty():
+    selection = selected_reporting_period("monthly")
+    date_range = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
     compare = request.args.get("compare", "").strip() == "1"
     if compare:
-        common = {
-            "year": request.args.get("year", "").strip(),
-            "month": request.args.get("month", "").strip(),
-            "period": request.args.get("period", "").strip(),
-        }
         comparison = {
-            key: loyalty_report(scope=key, **common)
+            key: loyalty_report(scope=key, **date_range)
             for key in ("overall", "crm", "nutritionists")
         }
         base = comparison["overall"]
@@ -1036,9 +1034,7 @@ def download_loyalty():
         )
     report = loyalty_report(
         scope=request.args.get("scope", "overall").strip(),
-        year=request.args.get("year", "").strip(),
-        month=request.args.get("month", "").strip(),
-        period=request.args.get("period", "").strip(),
+        **date_range,
         tier=request.args.get("tier", "").strip(),
         search=request.args.get("q", "").strip(),
         status=request.args.get("status", "").strip(),

@@ -312,7 +312,7 @@ def fulfilment_summary(scope, start_date, end_date, status=""):
     }
 
 
-def order_report(scope="overall", year="", month="", period="", status=""):
+def order_report(scope="overall", year="", month="", period="", status="", start_date="", end_date=""):
     scope = scope if scope in SCOPES else "overall"
     status = status if status in FULFILMENT_BUCKETS else ""
     coverage = uniware_order_coverage()
@@ -323,7 +323,9 @@ def order_report(scope="overall", year="", month="", period="", status=""):
     coverage_end = str(coverage.get("end_date") or today.isoformat())[:4]
     selected_year = int(year) if str(year).isdigit() and 2020 <= int(year) <= today.year else int(coverage_end)
     selected_month = int(month) if str(month).isdigit() and 1 <= int(month) <= 12 else 0
-    if period:
+    if start_date and end_date:
+        start_date, end_date = str(start_date), str(end_date)
+    elif period:
         days = {"today": 1, "yesterday": 1, "last_7": 7, "last_30": 30, "last_60": 60, "last_90": 90}[period]
         end = today - timedelta(days=1) if period == "yesterday" else today
         start = end - timedelta(days=days - 1)
@@ -356,7 +358,7 @@ def order_report(scope="overall", year="", month="", period="", status=""):
     }
 
 
-def loyalty_report(scope="overall", year="", month="", period="", tier="", search="", status=""):
+def loyalty_report(scope="overall", year="", month="", period="", tier="", search="", status="", start_date="", end_date=""):
     scope = scope if scope in SCOPES else "overall"
     tier = tier if tier in TIERS else ""
     status = status if status in FULFILMENT_BUCKETS else ""
@@ -368,7 +370,9 @@ def loyalty_report(scope="overall", year="", month="", period="", tier="", searc
     coverage_end = str(coverage.get("end_date") or today.isoformat())[:4]
     selected_year = int(year) if str(year).isdigit() and 2020 <= int(year) <= today.year else int(coverage_end)
     selected_month = int(month) if str(month).isdigit() and 1 <= int(month) <= 12 else 0
-    if period:
+    if start_date and end_date:
+        start_date, end_date = str(start_date), str(end_date)
+    elif period:
         days = {"today": 1, "yesterday": 1, "last_7": 7, "last_30": 30, "last_60": 60, "last_90": 90}[period]
         end = today - timedelta(days=1) if period == "yesterday" else today
         start = end - timedelta(days=days - 1)
