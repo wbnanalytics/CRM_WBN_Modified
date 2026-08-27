@@ -105,8 +105,8 @@ def comparison_view_excel(comparison, view, report_type, products=None):
 def loyalty_comparison_view_excel(comparison, view):
     labels = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
     if view == "fulfilment":
-        rows = [[labels[k]] + [comparison[k]["fulfilment"]["summary"][b] for b in comparison[k]["fulfilment_buckets"]] + [comparison[k]["fulfilment"]["total"]] for k in labels]
-        return _workbook("Uniware Fulfilment Comparison", ["Scope", "Delivered", "Cancelled", "Returned", "Pending", "Total Orders"], rows, (), (), (2, 3, 4, 5, 6))
+        rows = [[labels[k], comparison[k]["fulfilment"]["reconciliation"]["shopify_orders"]] + [comparison[k]["fulfilment"]["summary"][b] for b in comparison[k]["fulfilment_buckets"]] + [comparison[k]["fulfilment"]["reconciliation"]["matched_orders"], comparison[k]["fulfilment"]["reconciliation"]["shopify_missing_uniware"]] for k in labels]
+        return _workbook("Order Report Comparison", ["Scope", "Total Shopify Orders", "Delivered", "Cancelled", "Returned", "Pending", "Reconciled Orders", "Awaiting Uniware Sync / Match"], rows, (), (), (2, 3, 4, 5, 6, 7, 8))
     if view == "tiers":
         rows = [[labels[k]] + [comparison[k]["tier_counts"][tier] for tier in comparison[k]["tiers"]] + [comparison[k]["customer_count"]] for k in labels]
         return _workbook("Customer Loyalty Tier Comparison", ["Scope", "Loyal", "Regular", "Repeat", "One-time", "Total Customers"], rows, (), (), (2, 3, 4, 5, 6))

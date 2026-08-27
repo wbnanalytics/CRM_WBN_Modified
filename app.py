@@ -34,7 +34,7 @@ from dashboard_export import (
 )
 from management_dashboard_service import sales_management, cs_management, matches_sales_scope, is_crm_admin, product_management
 from loyalty_export import loyalty_comparison_workbook, loyalty_workbook
-from loyalty_service import loyalty_report, fulfilment_summary
+from loyalty_service import loyalty_report, order_report
 from report_view_export import (
     comparison_view_excel, loyalty_comparison_view_excel, loyalty_view_excel,
     product_view_excel, underlying_view_excel, visible_table_excel,
@@ -511,15 +511,8 @@ def dashboard():
             for key in ("overall", "crm", "nutritionists")
         }
         sales_management_report = sales_comparison["overall"]
-        sales_fulfilment_rows = [
-            fulfilment_summary(key, selection["start"].isoformat(), selection["end"].isoformat())
-            for key in ("overall", "crm", "nutritionists")
-        ] if view == "sales" else []
     else:
         sales_management_report = sales_management(report, sales_scope)
-        sales_fulfilment_rows = [
-            fulfilment_summary(sales_scope, selection["start"].isoformat(), selection["end"].isoformat())
-        ] if view == "sales" else []
     cs_management_report = cs_management(cs_report)
     attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
@@ -529,7 +522,6 @@ def dashboard():
         cs_management=cs_management_report,
         top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"], sales_scope=sales_scope, sales_comparison=sales_comparison,
-        sales_fulfilment_rows=sales_fulfilment_rows,
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
         available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
     )
@@ -881,6 +873,70 @@ def product_report():
         product_comparison=product_comparison, comparison_products=comparison_products,
         comparison_max_quantity=comparison_max_quantity,
         available_years=range(selection["today"].year, max(selection["today"].year - 3, 2024) - 1, -1),
+    )
+
+
+@app.route("/shopify/orders")
+@permission_required("shopify.view")
+def order_report_view():
+    scope = request.args.get("scope", "overall").strip()
+    if scope not in {"overall", "crm", "nutritionists", "comparison"}:
+        scope = "overall"
+    common = {
+        "year": request.args.get("year", "").strip(),
+        "month": request.args.get("month", "").strip(),
+        "period": request.args.get("period", "").strip(),
+    }
+    comparison = None
+    if scope == "comparison":
+        comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
+        report = comparison["overall"]
+    else:
+        report = order_report(scope=scope, status=request.args.get("status", "").strip(), **common)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        per_page = int(request.args.get("per_page", 50))
+    except (TypeError, ValueError):
+        per_page = 50
+    per_page = per_page if per_page in {25, 50, 100} else 50
+    all_orders = report["fulfilment"]["orders"]
+    page_count = max(1, (len(all_orders) + per_page - 1) // per_page)
+    page = min(page, page_count)
+    start_index = (page - 1) * per_page
+    return render_template(
+        "order_report.html", active_page="order_report", page_title="Order Report",
+        report=report, order_scope=scope, order_comparison=comparison,
+        page=page, page_count=page_count, per_page=per_page,
+        page_orders=all_orders[start_index:start_index + per_page],
+        start_index=start_index, total_filtered_orders=len(all_orders),
+    )
+
+
+@app.route("/shopify/orders.xlsx")
+@permission_required("shopify.view")
+def download_order_report():
+    scope = request.args.get("scope", "overall").strip()
+    common = {
+        "year": request.args.get("year", "").strip(),
+        "month": request.args.get("month", "").strip(),
+        "period": request.args.get("period", "").strip(),
+    }
+    if scope == "comparison":
+        comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
+        report = comparison["overall"]
+        workbook = loyalty_comparison_view_excel(comparison, "fulfilment")
+    else:
+        if scope not in {"overall", "crm", "nutritionists"}:
+            scope = "overall"
+        report = order_report(scope=scope, status=request.args.get("status", "").strip(), **common)
+        workbook = loyalty_view_excel(report, "fulfilment")
+    return send_file(
+        workbook, as_attachment=True,
+        download_name=f"order-report-{scope}-{report['start_date']}-to-{report['end_date']}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 

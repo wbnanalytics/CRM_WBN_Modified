@@ -14,11 +14,11 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='scorecard.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-8') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-9') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-8') }}">
-  <script src="{{ url_for('static', filename='app.js', v='20260826-8') }}" defer></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-9') }}">
+  <script src="{{ url_for('static', filename='app.js', v='20260826-9') }}" defer></script>
 </head>
 <body>
   <div class="app-shell">
@@ -32,6 +32,7 @@
         {% if can_access('zoho.customer_experience') or can_access('zoho.customer_escalation') %}<a class="nav-item {{ 'active' if active_page == 'zoho' }}" href="{{ url_for('zoho') }}"><span class="nav-glyph boxed">Z</span>Zoho</a>{% endif %}
         {% if can_access('bik.customer_tickets') or can_access('bik.all_conversations') %}<a class="nav-item {{ 'active' if active_page == 'bik' }}" href="{{ url_for('bik') }}"><span class="nav-glyph boxed">B</span>BIK</a>{% endif %}
         {% if can_access('shopify.view') %}<span class="nav-label section-label">SALES REPORTING</span>
+        <a class="nav-item {{ 'active' if active_page == 'order_report' }}" href="{{ url_for('order_report_view') }}"><span class="nav-glyph boxed">O</span>Order Report</a>
         <a class="nav-item {{ 'active' if active_page == 'product_report' }}" href="{{ url_for('product_report') }}"><span class="nav-glyph boxed">P</span>Product Report</a>
         <a class="nav-item {{ 'active' if active_page == 'customer_loyalty' }}" href="{{ url_for('customer_loyalty') }}"><span class="nav-glyph boxed">C</span>Customer Loyalty</a>
         <a class="nav-item {{ 'active' if active_page == 'shopify' }}" href="{{ url_for('shopify') }}"><span class="nav-glyph boxed">S</span>Shopify Sales</a>{% endif %}

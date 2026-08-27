@@ -2,9 +2,9 @@
 {% block content %}
 <section class="page-heading loyalty-heading">
   <div>
-    <span class="eyebrow">SHOPIFY × UNIWARE · RECONCILED</span>
+    <span class="eyebrow">SHOPIFY CUSTOMER INSIGHTS</span>
     <h1>Customer Loyalty Intelligence</h1>
-    <p>Customer loyalty from Shopify orders, with item-level delivery outcomes verified in Uniware.</p>
+    <p>Customer loyalty and repeat-order behaviour from Shopify.</p>
   </div>
   <div class="heading-actions">
     <span class="read-only-badge">Read-only sources</span>
@@ -47,7 +47,6 @@
   </a>
   {% endfor %}
 </section>
-{% include '_uniware_status_summary.html' %}
 
 <section class="panel loyalty-panel" id="customer-directory">
   <div class="panel-head loyalty-panel-head">
@@ -67,26 +66,5 @@
   {% if report.customers|length > 500 %}<p class="table-limit-note">Showing the first 500 customers. The filtered Excel contains all {{ report.customers|length|number }} rows.</p>{% endif %}
 </section>
 
-<section class="panel loyalty-panel">
-  <div class="panel-head"><div><span class="eyebrow">UNIWARE ORDER DETAIL</span><h2>Reconciled orders · {{ report.scope_label }}</h2><p class="panel-description">Drill-down behind the order-status cards, including every Uniware sub-order and item state.</p></div><a class="mini-export" href="{{ url_for('download_loyalty', export_view='fulfilment', scope=report.scope, year=report.year, month=report.month, period=report.period, tier=report.tier, q=report.search, status=report.status) }}">Download this view</a></div>
-  {% set check = report.fulfilment.reconciliation %}
-  <div class="reconciliation-strip {{ 'healthy' if check.shopify_missing_uniware == 0 else 'attention' }}">
-    <div><span>Shopify orders</span><strong>{{ check.shopify_orders|number }}</strong></div>
-    <div><span>Exact matches</span><strong>{{ check.matched_orders|number }}</strong></div>
-    <div><span>Missing Uniware match</span><strong>{{ check.shopify_missing_uniware|number }}</strong></div>
-    <div><span>Non-Shopify Uniware orders excluded</span><strong>{{ check.uniware_non_shopify|number }}</strong></div>
-    <p>Totals only include exact Shopify ↔ Uniware order-code matches. Unmatched rows are never forced into team results.</p>
-  </div>
-  <div class="table-wrap loyalty-table-wrap">
-    <table class="readable-table">
-      <thead><tr><th>Order</th><th>Date</th><th>Outcome</th><th>Item states</th><th>Items</th><th>Customer</th>{% if report.scope != 'overall' %}<th>Agent</th>{% endif %}<th>Payment</th></tr></thead>
-      <tbody>
-      {% for row in report.fulfilment.orders[:500] %}
-      <tr><td><strong>{{ row.display_order_code }}</strong><small>{{ row.sub_order_count }} Uniware sub-order{{ '' if row.sub_order_count == 1 else 's' }}</small></td><td>{{ row.display_order_date }}</td><td><span class="fulfilment-pill {{ row.fulfilment_bucket|lower }}">{{ row.fulfilment_bucket }}</span></td><td>{% for key, value in row.item_status_summary.items() %}<span class="item-state">{{ key|replace('_',' ')|title }} × {{ value }}</span>{% endfor %}</td><td>{{ row.item_count }}</td><td>{{ row.customer_name or '—' }}<small>{{ row.customer_email or row.customer_phone or '—' }}</small></td>{% if report.scope != 'overall' %}<td>{{ row.display_name }}<small>{{ row.role }}</small></td>{% endif %}<td>{{ 'COD' if row.cod else 'Prepaid / other' }}</td></tr>
-      {% else %}<tr><td colspan="{{ 7 if report.scope == 'overall' else 8 }}" class="empty-state">No reconciled Uniware orders match this range and scope yet.</td></tr>{% endfor %}
-      </tbody><tfoot><tr><th colspan="4">Filtered total · {{ report.fulfilment.orders|length|number }} orders</th><th>{{ report.fulfilment.orders|sum(attribute='item_count')|number }} items</th><th colspan="{{ 2 if report.scope == 'overall' else 3 }}">Active filters applied</th></tr></tfoot>
-    </table>
-  </div>
-</section>
 {% endif %}
 {% endblock %}

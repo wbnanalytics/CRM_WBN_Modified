@@ -224,15 +224,45 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
     coverage = uniware_order_coverage()
     overlap_start = max(start_date, str(coverage.get("start_date") or start_date))
     overlap_end = min(end_date, str(coverage.get("end_date") or "0000-00-00"))
-    shopify = shopify_orders_between(overlap_start, overlap_end) if overlap_start <= overlap_end else []
+    # Shopify total always follows the user's complete selected period. Uniware
+    # outcomes are attached only where a reconciled record is available.
+    shopify = shopify_orders_between(start_date, end_date)
     scoped_shopify = [row for row in shopify if _scope_matches(scope, row.get("role"), row.get("display_name"))]
+    customer_sales = shopify_customer_sales_daily_between(start_date, end_date)
+    if scope == "overall":
+        scoped_shopify_total = sum(
+            int(row.get("order_count") or 0)
+            for row in customer_sales if row.get("employee_key") == OVERALL_CUSTOMER_KEY
+        )
+    else:
+        scoped_shopify_total = sum(
+            int(row.get("order_count") or 0)
+            for row in customer_sales
+            if row.get("employee_key") != OVERALL_CUSTOMER_KEY
+            and _scope_matches(scope, row.get("role"), row.get("display_name"))
+        )
     scoped_ids = {row["order_id"] for row in scoped_shopify}
+    shopify_by_id = {row["order_id"]: row for row in scoped_shopify}
     scoped_uniware = [
         row for row in uniware
         if row.get("linked_shopify_order_id") in scoped_ids
         and _scope_matches(scope, row.get("role"), row.get("display_name"))
     ]
     parents = _parent_orders(scoped_uniware)
+    # Shopify is the authoritative source for customer and payment details. Uniware
+    # can return masked contact values even when the exact parent order is matched.
+    for parent in parents:
+        shopify_order = shopify_by_id.get(parent.get("linked_shopify_order_id"), {})
+        for target, source in (
+            ("customer_name", "customer_name"),
+            ("customer_email", "customer_email"),
+            ("customer_phone", "customer_phone"),
+            ("payment_type", "payment_type"),
+            ("payment_gateways", "payment_gateways"),
+            ("financial_status", "financial_status"),
+        ):
+            if shopify_order.get(source):
+                parent[target] = shopify_order[source]
     matched_ids = {row["linked_shopify_order_id"] for row in parents}
     buckets = Counter(row["fulfilment_bucket"] for row in parents)
     visible = [
@@ -246,14 +276,23 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
         "orders": visible,
         "items": uniware_items_for_orders(order_codes),
         "reconciliation": {
-            "shopify_orders": len(scoped_shopify),
+            "shopify_orders": scoped_shopify_total,
             "matched_orders": len(matched_ids),
             "matched_sub_orders": len(scoped_uniware),
-            "shopify_missing_uniware": max(len(scoped_ids - matched_ids), 0),
+            "shopify_missing_uniware": max(scoped_shopify_total - len(matched_ids), 0),
             "uniware_non_shopify": sum(1 for row in uniware if not row.get("linked_shopify_order_id")),
             "uniware_rows": len(uniware),
-            "coverage_start": coverage.get("start_date"),
-            "coverage_end": coverage.get("end_date"),
+            "coverage_start": overlap_start if overlap_start <= overlap_end else None,
+            "coverage_end": overlap_end if overlap_start <= overlap_end else None,
+            "source_coverage_start": coverage.get("start_date"),
+            "source_coverage_end": coverage.get("end_date"),
+            "selected_start": start_date,
+            "selected_end": end_date,
+            "coverage_complete": bool(
+                coverage.get("start_date") and coverage.get("end_date")
+                and str(coverage["start_date"]) <= start_date
+                and str(coverage["end_date"]) >= end_date
+            ),
         },
     }
 
@@ -269,6 +308,50 @@ def fulfilment_summary(scope, start_date, end_date, status=""):
         "end_date": end_date,
         "status": status,
         "buckets": FULFILMENT_BUCKETS,
+        "fulfilment": _fulfilment(scope, start_date, end_date, status),
+    }
+
+
+def order_report(scope="overall", year="", month="", period="", status=""):
+    scope = scope if scope in SCOPES else "overall"
+    status = status if status in FULFILMENT_BUCKETS else ""
+    coverage = uniware_order_coverage()
+    today = date.today()
+    valid_periods = {key for key, _label in DATE_PRESETS}
+    period = period if period in valid_periods else ""
+    coverage_start = str(coverage.get("start_date") or today.isoformat())[:4]
+    coverage_end = str(coverage.get("end_date") or today.isoformat())[:4]
+    selected_year = int(year) if str(year).isdigit() and 2020 <= int(year) <= today.year else int(coverage_end)
+    selected_month = int(month) if str(month).isdigit() and 1 <= int(month) <= 12 else 0
+    if period:
+        days = {"today": 1, "yesterday": 1, "last_7": 7, "last_30": 30, "last_60": 60, "last_90": 90}[period]
+        end = today - timedelta(days=1) if period == "yesterday" else today
+        start = end - timedelta(days=days - 1)
+        start_date, end_date = start.isoformat(), end.isoformat()
+    elif selected_month:
+        start_date = date(selected_year, selected_month, 1).isoformat()
+        end_date = date(selected_year, selected_month, monthrange(selected_year, selected_month)[1]).isoformat()
+    else:
+        start_date = date(selected_year, 1, 1).isoformat()
+        end_date = date(selected_year, 12, 31).isoformat()
+    years = list(range(int(coverage_end), int(coverage_start) - 1, -1))
+    if selected_year not in years:
+        years.append(selected_year)
+        years.sort(reverse=True)
+    return {
+        "scope": scope,
+        "scope_label": SCOPES[scope],
+        "scopes": SCOPES,
+        "year": selected_year,
+        "month": selected_month,
+        "period": period,
+        "periods": DATE_PRESETS,
+        "years": years,
+        "months": tuple((number, date(2000, number, 1).strftime("%B")) for number in range(1, 13)),
+        "start_date": start_date,
+        "end_date": end_date,
+        "status": status,
+        "fulfilment_buckets": FULFILMENT_BUCKETS,
         "fulfilment": _fulfilment(scope, start_date, end_date, status),
     }
 
@@ -317,7 +400,6 @@ def loyalty_report(scope="overall", year="", month="", period="", tier="", searc
     ]
     all_customers = _customer_rows(source, orders)
     tier_counts = Counter(row["tier"] for row in all_customers)
-    fulfilment = _fulfilment(scope, start_date, end_date, status)
     return {
         "scope": scope,
         "scope_label": SCOPES[scope],
@@ -334,11 +416,9 @@ def loyalty_report(scope="overall", year="", month="", period="", tier="", searc
         "search": search,
         "status": status,
         "tiers": TIERS,
-        "fulfilment_buckets": FULFILMENT_BUCKETS,
         "tier_counts": {name: tier_counts.get(name, 0) for name in TIERS},
         "customer_count": len(all_customers),
         "order_count": sum(row["order_count"] for row in all_customers),
         "customers": _filter_customers(all_customers, tier, search, scope),
         "coverage": coverage,
-        "fulfilment": fulfilment,
     }

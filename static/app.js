@@ -184,8 +184,14 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   table.dataset.excelFilterReady = "1";
   const header = table.tHead.rows[0];
   const headers = [...header.cells].map((cell) => cell.textContent.trim());
-  const bodyRows = [...(table.tBodies[0]?.rows || [])].filter((row) => !row.querySelector(".empty-state"));
+  const bodyRows = [...(table.tBodies[0]?.rows || [])].filter((row) => !row.querySelector(".empty-state") && !row.classList.contains("team-member-detail"));
   if (!bodyRows.length) return;
+  let filteredRows = [...bodyRows];
+  let currentPage = 1;
+  let pageSize = 50;
+  let pageLabel = null;
+  let previousPage = null;
+  let nextPage = null;
   const filters = headers.map(() => ({type: "text", value: ""}));
   const filterRow = table.tHead.insertRow();
   filterRow.className = "excel-filter-row";
@@ -268,17 +274,27 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
       row.append(cell);
     });
   };
+  const renderPage = () => {
+    const pageCount = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    currentPage = Math.min(currentPage, pageCount);
+    const first = (currentPage - 1) * pageSize;
+    const pageRows = new Set(filteredRows.slice(first, first + pageSize));
+    bodyRows.forEach((row) => { row.hidden = !pageRows.has(row); });
+    updateTotals(filteredRows);
+    if (pageLabel) pageLabel.textContent = `Page ${currentPage} of ${pageCount} · ${filteredRows.length} rows`;
+    if (previousPage) previousPage.disabled = currentPage <= 1;
+    if (nextPage) nextPage.disabled = currentPage >= pageCount;
+  };
   const applyFilters = () => {
-    const visible = [];
-    bodyRows.forEach((row) => {
+    filteredRows = bodyRows.filter((row) => {
       const matches = filters.every((filter, index) => {
         const value = normalizedCell(row, index);
         return filter.type === "multi" ? (!filter.values.size || filter.values.has(value)) : (!filter.value || value.toLowerCase().includes(filter.value));
       });
-      row.hidden = !matches;
-      if (matches) visible.push(row);
+      return matches;
     });
-    updateTotals(visible);
+    currentPage = 1;
+    renderPage();
   };
 
   const wrap = table.closest(".table-wrap") || table.parentElement;
@@ -297,7 +313,7 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   download.className = "primary-button";
   download.textContent = "Download this filtered view";
   download.addEventListener("click", async () => {
-    const visible = bodyRows.filter((row) => !row.hidden).map((row) => [...row.cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()));
+    const visible = filteredRows.map((row) => [...row.cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()));
     const totals = table.tFoot?.rows?.[0] ? [...table.tFoot.rows[0].cells].map((cell) => cell.innerText.replace(/\s+/g, " ").trim()) : [];
     download.disabled = true;
     download.textContent = "Preparing Excel…";
@@ -316,5 +332,23 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   toolbar.append(clear, download);
   if (wrap?.previousElementSibling?.classList.contains("excel-view-toolbar")) return;
   wrap.before(toolbar);
+  if (bodyRows.length > 50) {
+    const pager = document.createElement("nav");
+    pager.className = "client-table-pagination";
+    previousPage = document.createElement("button");
+    previousPage.type = "button";
+    previousPage.textContent = "Previous";
+    previousPage.addEventListener("click", () => { currentPage -= 1; renderPage(); });
+    pageLabel = document.createElement("span");
+    nextPage = document.createElement("button");
+    nextPage.type = "button";
+    nextPage.textContent = "Next";
+    nextPage.addEventListener("click", () => { currentPage += 1; renderPage(); });
+    const size = document.createElement("select");
+    [25, 50, 100].forEach((value) => { const option = document.createElement("option"); option.value = value; option.textContent = `${value} rows`; option.selected = value === pageSize; size.append(option); });
+    size.addEventListener("change", () => { pageSize = Number(size.value); currentPage = 1; renderPage(); });
+    pager.append(previousPage, pageLabel, nextPage, size);
+    wrap.after(pager);
+  }
   applyFilters();
 });
