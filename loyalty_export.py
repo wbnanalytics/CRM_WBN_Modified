@@ -128,7 +128,6 @@ def loyalty_workbook(report):
     reconciliation.append(["Matched orders", checks["matched_orders"], "Exact normalized Shopify ↔ Uniware order-code matches"])
     reconciliation.append(["Matched Uniware sub-orders", checks["matched_sub_orders"], "Collapsed into unique Shopify parent orders before status totals"])
     reconciliation.append(["Shopify missing in Uniware", checks["shopify_missing_uniware"], "Shopify orders without a matched Uniware record in local data"])
-    reconciliation.append(["Uniware non-Shopify", checks["uniware_non_shopify"], "Uniware orders excluded from Shopify-based WBN/team totals"])
     reconciliation.append(["Uniware rows", checks["uniware_rows"], "All Uniware parent orders synced for the range"])
     reconciliation.append([])
     reconciliation.append(["Rule", "Definition", ""])
