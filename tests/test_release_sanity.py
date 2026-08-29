@@ -1,5 +1,5 @@
 import unittest
-from datetime import date
+from datetime import date, datetime
 
 from app import app
 from loyalty_service import _parent_fulfilment_bucket
@@ -40,7 +40,7 @@ class ReleaseSanityTests(unittest.TestCase):
                     "email": "varun.c@wellbeingnutrition.com", "name": "Varun",
                     "role": "admin", "permissions": [],
                 }
-                session["signed_in_at"] = "2026-08-27T10:00:00+05:30"
+                session["signed_in_at"] = datetime.now().astimezone().isoformat()
             response = client.get("/dashboard")
             html = response.get_data(as_text=True)
             self.assertEqual(response.status_code, 200)

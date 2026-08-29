@@ -228,19 +228,10 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
     # outcomes are attached only where a reconciled record is available.
     shopify = shopify_orders_between(start_date, end_date)
     scoped_shopify = [row for row in shopify if _scope_matches(scope, row.get("role"), row.get("display_name"))]
-    customer_sales = shopify_customer_sales_daily_between(start_date, end_date)
-    if scope == "overall":
-        scoped_shopify_total = sum(
-            int(row.get("order_count") or 0)
-            for row in customer_sales if row.get("employee_key") == OVERALL_CUSTOMER_KEY
-        )
-    else:
-        scoped_shopify_total = sum(
-            int(row.get("order_count") or 0)
-            for row in customer_sales
-            if row.get("employee_key") != OVERALL_CUSTOMER_KEY
-            and _scope_matches(scope, row.get("role"), row.get("display_name"))
-        )
+    # Order report totals must come from the same exact order rows used by its
+    # drill-down.  The customer-loyalty aggregate has different coverage and
+    # must never be used as a proxy for order totals.
+    scoped_shopify_total = len({row["order_id"] for row in scoped_shopify})
     scoped_ids = {row["order_id"] for row in scoped_shopify}
     shopify_by_id = {row["order_id"]: row for row in scoped_shopify}
     scoped_uniware = [

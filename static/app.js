@@ -258,6 +258,13 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
     if (!table.tFoot) table.createTFoot();
     table.tFoot.replaceChildren();
     const row = table.tFoot.insertRow();
+    const columnValues = headers.map((_label, index) =>
+      visible.map((item) => normalizedCell(item, index)).filter(isNumericText).map(numeric)
+    );
+    const columnSum = (pattern) => {
+      const index = headers.findIndex((header) => pattern.test(header));
+      return index < 0 ? 0 : columnValues[index].reduce((sum, value) => sum + value, 0);
+    };
     headers.forEach((label, index) => {
       const cell = document.createElement("th");
       if (index === 0) cell.textContent = `Filtered total · ${visible.length} row${visible.length === 1 ? "" : "s"}`;
@@ -265,8 +272,32 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
         const values = visible.map((item) => normalizedCell(item, index)).filter(isNumericText);
         if (values.length >= Math.max(1, Math.ceil(visible.length * .6))) {
           const numbers = values.map(numeric);
-          const useAverage = values[0]?.includes("%") || /aov|average|rate|resolution|csat/i.test(label);
-          const total = useAverage ? numbers.reduce((a, b) => a + b, 0) / numbers.length : numbers.reduce((a, b) => a + b, 0);
+          let total;
+          if (/discount\s*%/i.test(label)) {
+            const discountIndex = headers.findIndex((header) => /eligible discount|^discount$/i.test(header));
+            const mrpIndex = headers.findIndex((header) => /adjusted mrp|^mrp$/i.test(header));
+            const eligibleRows = visible.filter((row) => {
+              const discountText = discountIndex < 0 ? "" : normalizedCell(row, discountIndex);
+              return isNumericText(discountText) && !/excluded/i.test(discountText);
+            });
+            const discount = eligibleRows.reduce((sum, row) => sum + numeric(normalizedCell(row, discountIndex)), 0);
+            const mrp = eligibleRows.reduce((sum, row) => {
+              const authoritative = Number(row.dataset.discountDenominator);
+              return sum + (Number.isFinite(authoritative) ? authoritative : numeric(normalizedCell(row, mrpIndex)));
+            }, 0);
+            total = mrp ? discount / mrp * 100 : 0;
+          } else if (/^aov$|average order value/i.test(label)) {
+            const selling = columnSum(/total selling price|^selling price$|^sales$/i);
+            const orders = columnSum(/^orders$/i);
+            total = orders ? selling / orders : 0;
+          } else if (/^resolution$/i.test(label)) {
+            const resolved = columnSum(/^resolved$/i);
+            const received = columnSum(/^received$/i);
+            total = received ? resolved / received * 100 : 0;
+          } else {
+            const useAverage = values[0]?.includes("%") || /average|rate|csat/i.test(label);
+            total = useAverage ? numbers.reduce((a, b) => a + b, 0) / numbers.length : numbers.reduce((a, b) => a + b, 0);
+          }
           cell.textContent = formatTotal(total, values[0] || "", label);
         }
       }

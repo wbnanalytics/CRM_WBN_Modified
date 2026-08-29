@@ -38,12 +38,6 @@
         <h2>Welcome back</h2>
         <p>Sign in to access the Customer Success workspace.</p>
         {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}{% for category, message in messages %}<div class="login-alert {{ category }}">{{ message }}</div>{% endfor %}{% endif %}{% endwith %}
-        <div class="login-character">
-          <video id="loginPersonVideo" autoplay loop playsinline preload="auto" aria-label="Animated login welcome character">
-            <source src="{{ url_for('static', filename='login-dancer.webm') }}" type="video/webm">
-          </video>
-          <button id="loginSoundToggle" class="login-sound-toggle sound-on" type="button" aria-pressed="true" aria-label="Turn sound off"><span aria-hidden="true">♪</span><b>Sound off</b></button>
-        </div>
         <div class="ms-motion"><span class="ms-orbit one" aria-hidden="true"></span><span class="ms-orbit two" aria-hidden="true"></span>{% if microsoft_ready %}<a class="ms-button" href="{{ url_for('microsoft_login') }}"><span class="ms-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Continue with Microsoft</a>{% else %}<button class="ms-button disabled-button" type="button" disabled><span class="ms-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>Continue with Microsoft</button>{% endif %}</div>
         {% if not microsoft_ready %}<div class="login-divider"><span>LOCAL PREVIEW</span></div><form action="{{ url_for('preview_login') }}" method="post">
           <button class="primary-button full-width" type="submit">Enter CS Metric dashboard <span>→</span></button>
@@ -52,43 +46,5 @@
       <p class="legal">Internal workspace · Wellbeing Nutrition © {{ current_year }}</p>
     </section>
   </main>
-  <script>
-    (() => {
-      const video = document.getElementById("loginPersonVideo");
-      const toggle = document.getElementById("loginSoundToggle");
-      if (!video) return;
-      video.volume = 0.65;
-      const reflectSound = () => {
-        if (!toggle) return;
-        const soundOn = !video.muted;
-        toggle.classList.toggle("sound-on", soundOn);
-        toggle.setAttribute("aria-pressed", String(soundOn));
-        toggle.setAttribute("aria-label", soundOn ? "Turn sound off" : "Turn sound on");
-        toggle.querySelector("b").textContent = soundOn ? "Sound off" : "Sound on";
-      };
-      const start = async () => {
-        video.muted = false;
-        try { await video.play(); }
-        catch (_) { video.muted = true; try { await video.play(); } catch (_) {} }
-        reflectSound();
-      };
-      start();
-      const unlockAudio = (event) => {
-        if (event.target instanceof Element && event.target.closest("#loginSoundToggle")) return;
-        video.muted = false;
-        video.volume = 0.65;
-        video.play().catch(() => {});
-        reflectSound();
-      };
-      document.addEventListener("pointerdown", unlockAudio, { once: true, capture: true });
-      document.addEventListener("keydown", unlockAudio, { once: true, capture: true });
-      if (toggle) toggle.addEventListener("click", (event) => {
-        event.stopPropagation();
-        video.muted = !video.muted;
-        if (!video.muted) video.play().catch(() => {});
-        reflectSound();
-      });
-    })();
-  </script>
 </body>
 </html>
