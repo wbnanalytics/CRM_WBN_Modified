@@ -46,7 +46,7 @@
     {% for bucket in report.fulfilment_buckets %}<a class="fulfilment-card {{ bucket|lower }} {{ 'active' if report.status == bucket }}" href="{{ report_url(report.scope, bucket) }}"><span>{{ bucket }} orders</span><strong>{{ uniware.summary[bucket]|number }}</strong><small>{{ ((uniware.summary[bucket] / uniware.total * 100) if uniware.total else 0)|round(1) }}%</small></a>{% endfor %}
   </div>
   <div class="reconciliation-strip {{ 'healthy' if check.shopify_missing_uniware == 0 else 'attention' }}">
-    <div><span>Total Shopify orders</span><strong>{{ check.shopify_orders|number }}</strong></div><div><span>Reconciled orders</span><strong>{{ check.matched_orders|number }}</strong></div><div><span>Awaiting Uniware match</span><strong>{{ check.shopify_missing_uniware|number }}</strong></div>
+    <div><span>Shopify orders in coverage</span><strong>{{ check.shopify_orders_in_coverage|number }}</strong></div><div><span>Reconciled orders</span><strong>{{ check.matched_orders|number }}</strong></div><div><span>Awaiting Uniware match</span><strong>{{ check.shopify_missing_uniware|number }}</strong></div>
   </div>
 </section>
 

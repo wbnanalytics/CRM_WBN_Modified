@@ -232,7 +232,13 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
     # drill-down.  The customer-loyalty aggregate has different coverage and
     # must never be used as a proxy for order totals.
     scoped_shopify_total = len({row["order_id"] for row in scoped_shopify})
-    scoped_ids = {row["order_id"] for row in scoped_shopify}
+    coverage_shopify = [
+        row for row in scoped_shopify
+        if overlap_start <= overlap_end
+        and overlap_start <= str(row.get("local_date") or "")[:10] <= overlap_end
+    ]
+    coverage_shopify_total = len({row["order_id"] for row in coverage_shopify})
+    scoped_ids = {row["order_id"] for row in coverage_shopify}
     shopify_by_id = {row["order_id"]: row for row in scoped_shopify}
     scoped_uniware = [
         row for row in uniware
@@ -268,9 +274,10 @@ def _fulfilment(scope, start_date, end_date, status_filter=""):
         "items": uniware_items_for_orders(order_codes),
         "reconciliation": {
             "shopify_orders": scoped_shopify_total,
+            "shopify_orders_in_coverage": coverage_shopify_total,
             "matched_orders": len(matched_ids),
             "matched_sub_orders": len(scoped_uniware),
-            "shopify_missing_uniware": max(scoped_shopify_total - len(matched_ids), 0),
+            "shopify_missing_uniware": max(coverage_shopify_total - len(matched_ids), 0),
             "uniware_non_shopify": sum(1 for row in uniware if not row.get("linked_shopify_order_id")),
             "uniware_rows": len(uniware),
             "coverage_start": overlap_start if overlap_start <= overlap_end else None,

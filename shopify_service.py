@@ -384,10 +384,11 @@ def sync_shopify_order_history(start_date, end_date):
         raise
 
 
-def _month_chunks(start, end):
+def _date_chunks(start, end, days=7):
+    """Keep each ShopifyQL request comfortably below Shopify's 25k-row cap."""
     cursor = start
     while cursor <= end:
-        chunk_end = min(end, date(cursor.year, cursor.month, monthrange(cursor.year, cursor.month)[1]))
+        chunk_end = min(end, cursor + timedelta(days=max(days, 1) - 1))
         yield cursor, chunk_end
         cursor = chunk_end + timedelta(days=1)
 
@@ -407,7 +408,7 @@ def sync_shopify(start_date, end_date, order_detail_start=None):
     received = saved = 0
     try:
         token = _access_token()
-        for chunk_start, chunk_end in _month_chunks(start, end):
+        for chunk_start, chunk_end in _date_chunks(start, end):
             query = f"""FROM sales
 SHOW gross_sales, discounts, total_sales, orders
 TIMESERIES day

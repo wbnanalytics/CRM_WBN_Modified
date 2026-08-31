@@ -1,12 +1,43 @@
 import unittest
 from datetime import date, datetime
+from unittest.mock import patch
 
 from app import app
-from loyalty_service import _parent_fulfilment_bucket
+from loyalty_service import _fulfilment, _parent_fulfilment_bucket
 from management_dashboard_service import sales_management
+from shopify_service import _date_chunks
 
 
 class ReleaseSanityTests(unittest.TestCase):
+    def test_shopify_sync_uses_bounded_date_chunks(self):
+        chunks = list(_date_chunks(date(2026, 7, 17), date(2026, 8, 30)))
+        self.assertEqual(chunks[0], (date(2026, 7, 17), date(2026, 7, 23)))
+        self.assertEqual(chunks[-1][1], date(2026, 8, 30))
+        self.assertTrue(all((end - start).days <= 6 for start, end in chunks))
+
+    @patch("loyalty_service.uniware_items_for_orders", return_value=[])
+    @patch("loyalty_service.uniware_orders_between")
+    @patch("loyalty_service.shopify_orders_between")
+    @patch("loyalty_service.uniware_order_coverage")
+    def test_awaiting_uniware_only_counts_orders_inside_coverage(
+        self, coverage, shopify_orders, uniware_orders, _items
+    ):
+        coverage.return_value = {"start_date": "2026-08-01", "end_date": "2026-08-31"}
+        shopify_orders.return_value = [
+            {"order_id": "old", "local_date": "2026-01-10", "role": "Unassigned", "display_name": "Unassigned"},
+            {"order_id": "matched", "local_date": "2026-08-10", "role": "Unassigned", "display_name": "Unassigned"},
+            {"order_id": "waiting", "local_date": "2026-08-11", "role": "Unassigned", "display_name": "Unassigned"},
+        ]
+        uniware_orders.return_value = [{
+            "linked_shopify_order_id": "matched", "sale_order_code": "SO-1",
+            "fulfilment_bucket": "Delivered", "item_status_summary": {"Delivered": 1},
+            "item_count": 1, "role": "Unassigned", "display_name": "Unassigned",
+        }]
+        result = _fulfilment("overall", "2026-01-01", "2026-12-31")
+        self.assertEqual(result["reconciliation"]["shopify_orders"], 3)
+        self.assertEqual(result["reconciliation"]["shopify_orders_in_coverage"], 2)
+        self.assertEqual(result["reconciliation"]["shopify_missing_uniware"], 1)
+
     def test_parent_order_outcome_precedence(self):
         self.assertEqual(_parent_fulfilment_bucket([{"fulfilment_bucket": "Delivered"}]), "Delivered")
         self.assertEqual(_parent_fulfilment_bucket([{"fulfilment_bucket": "Cancelled"}]), "Cancelled")

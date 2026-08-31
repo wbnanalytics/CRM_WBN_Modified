@@ -125,6 +125,7 @@ def loyalty_workbook(report):
     _header(reconciliation, 1)
     checks = report["fulfilment"]["reconciliation"]
     reconciliation.append(["Shopify orders", checks["shopify_orders"], "Orders in the selected Shopify scope/date range"])
+    reconciliation.append(["Shopify orders in Uniware coverage", checks["shopify_orders_in_coverage"], "Shopify orders inside the synced Uniware coverage window"])
     reconciliation.append(["Matched orders", checks["matched_orders"], "Exact normalized Shopify ↔ Uniware order-code matches"])
     reconciliation.append(["Matched Uniware sub-orders", checks["matched_sub_orders"], "Collapsed into unique Shopify parent orders before status totals"])
     reconciliation.append(["Shopify missing in Uniware", checks["shopify_missing_uniware"], "Shopify orders without a matched Uniware record in local data"])

@@ -1,5 +1,5 @@
 [Unit]
-Description=Send weekday CRM recognition emails at 11:00 IST
+Description=Send weekday CRM Top 3 recognition email at 11:00 IST
 
 [Timer]
 OnCalendar=Mon..Fri *-*-* 11:00:00 Asia/Kolkata
@@ -10,4 +10,3 @@ Unit=wbn-crm-recognition@daily.service
 
 [Install]
 WantedBy=timers.target
-

@@ -6,10 +6,9 @@ from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
-from attendance_service import attendance_period
 from database import db_connection, list_portal_users, list_shopify_employees, utc_now
 from sales_celebration_mailer import (
-    _email_shell, _inr, _name_chips, _period_rankings, ranking_email,
+    _email_shell, _inr, _period_rankings, ranking_email,
 )
 from scorecard_mailer import send_html_email
 from scorecard_service import list_agents
@@ -136,39 +135,6 @@ def _is_working_day(day):
     return day.weekday() < 5
 
 
-def _first_working_day(year, month):
-    day = date(year, month, 1)
-    while not _is_working_day(day):
-        day += timedelta(days=1)
-    return day
-
-
-def send_perfect_attendance(today):
-    month_start = date(today.year, today.month, 1)
-    prior_end = month_start - timedelta(days=1)
-    prior_start = date(prior_end.year, prior_end.month, 1)
-    report = attendance_period(prior_start, prior_end, today=prior_end)
-    qualifying = [
-        row for row in report["rows"]
-        if row["present"] > 0 and row["planned"] == 0 and row["unplanned"] == 0
-    ]
-    names = [row["employee_name"] for row in qualifying]
-    recipients = _emails_for_rows([{"name": name} for name in names])
-    if not recipients:
-        return False
-    label = prior_start.strftime("%B %Y")
-    content = '<div style="padding:18px;border-radius:14px;background:#f6f9f2;border:1px solid #e1eadc">' + _name_chips(names) + '</div>'
-    body = _email_shell(
-        "Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
-        "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-        content, label,
-    )
-    return _send_once(
-        f"perfect-attendance:{prior_start:%Y-%m}", "perfect_attendance", label,
-        f"Congratulations! 🎉 Perfect Attendance Recognition | {label}", body, recipients,
-    )
-
-
 def send_target_achievers(today):
     report = sales_report("daily", today)
     directory = _email_directory()
@@ -203,14 +169,13 @@ def run(mode, now=None):
         if _is_working_day(today):
             yesterday = today - timedelta(days=1)
             send_ranking("daily", yesterday, yesterday)
-        if today == _first_working_day(today.year, today.month):
-            send_perfect_attendance(today)
     elif mode in {"weekly", "closing"}:
         # Retain compatibility with any old VM timer until deployment removes it,
         # but never send the discontinued weekly/monthly/yearly ranking emails.
         print(f"DISABLED recognition mode: {mode}")
     elif mode == "targets":
-        send_target_achievers(today)
+        if _is_working_day(today):
+            send_target_achievers(today)
 
 
 if __name__ == "__main__":
