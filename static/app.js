@@ -1,16 +1,16 @@
 document.querySelector("#menuButton")?.addEventListener("click", () => document.querySelector("#sidebar")?.classList.toggle("open"));
 const todayLabel = document.querySelector("#todayLabel");
-if (todayLabel) todayLabel.textContent = new Intl.DateTimeFormat("en-IN", {day: "numeric", month: "short", year: "numeric"}).format(new Date());
+if (todayLabel) todayLabel.textContent = new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric" }).format(new Date());
 const istClock = document.querySelector("[data-ist-clock]");
 const updateIstClock = () => {
   if (!istClock) return;
-  istClock.textContent = new Intl.DateTimeFormat("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true}).format(new Date()) + " IST";
+  istClock.textContent = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }).format(new Date()) + " IST";
 };
 updateIstClock();
 if (istClock) window.setInterval(updateIstClock, 1000);
 document.querySelectorAll("[data-ist-time]").forEach((element) => {
   const parsed = new Date(element.dataset.istTime);
-  if (!Number.isNaN(parsed.getTime())) element.textContent = new Intl.DateTimeFormat("en-IN", {timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true}).format(parsed) + " IST";
+  if (!Number.isNaN(parsed.getTime())) element.textContent = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true }).format(parsed) + " IST";
 });
 document.querySelectorAll("[data-permission-toggle]").forEach((button) => button.addEventListener("click", () => {
   const checked = button.dataset.permissionToggle === "all";
@@ -57,7 +57,7 @@ if (syncButton) {
   };
   const pollSync = async (showFailure = false) => {
     try {
-      const response = await fetch("/api/sync/status", {headers: {Accept: "application/json"}});
+      const response = await fetch("/api/sync/status", { headers: { Accept: "application/json" } });
       const data = await response.json();
       if (data.status === "queued" || data.status === "running") {
         if (foregroundDeadline && Date.now() >= foregroundDeadline) {
@@ -85,7 +85,7 @@ if (syncButton) {
     try {
       const response = await fetch("/api/sync/all", {
         method: "POST",
-        headers: {"Content-Type": "application/json", "X-CSRF-Token": syncButton.dataset.csrf},
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": syncButton.dataset.csrf },
         body: "{}",
       });
       const data = await response.json();
@@ -141,7 +141,7 @@ if (productFilter) {
 const salesChart = document.querySelector("[data-sales-chart]");
 const salesChartTooltip = salesChart?.querySelector("[data-sales-chart-tooltip]");
 if (salesChart && salesChartTooltip) {
-  const money = new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 0});
+  const money = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
   const showSalesPoint = (event) => {
     const point = event.currentTarget;
     const rows = [
@@ -191,7 +191,7 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   let pageLabel = null;
   let previousPage = null;
   let nextPage = null;
-  const filters = headers.map(() => ({type: "text", value: ""}));
+  const filters = headers.map(() => ({ type: "text", value: "" }));
   const filterRow = table.tHead.insertRow();
   filterRow.className = "excel-filter-row";
   const normalizedCell = (row, index) => (row.cells[index]?.innerText || "").replace(/\s+/g, " ").trim();
@@ -214,7 +214,7 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
     filterRow.append(cell);
     const isMulti = /agent|employee|team|role/i.test(label);
     if (isMulti) {
-      filters[index] = {type: "multi", values: new Set()};
+      filters[index] = { type: "multi", values: new Set() };
       const values = [...new Set(bodyRows.map((row) => normalizedCell(row, index)).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       const details = document.createElement("details");
       details.className = "column-multiselect";
@@ -249,10 +249,10 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
   const isNumericText = (value) => /^(?:₹\s*)?-?[\d,]+(?:\.\d+)?%?$/.test(value.replace(/\s/g, ""));
   const numeric = (value) => Number(value.replace(/[^0-9.-]/g, "")) || 0;
   const formatTotal = (value, sample, label) => {
-    if (sample.includes("₹")) return new Intl.NumberFormat("en-IN", {style: "currency", currency: "INR", maximumFractionDigits: 0}).format(value);
+    if (sample.includes("₹")) return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(value);
     if (sample.includes("%")) return `${value.toFixed(1)}%`;
     if (/aov|average|rate|resolution|csat/i.test(label)) return value.toFixed(1);
-    return new Intl.NumberFormat("en-IN", {maximumFractionDigits: 2}).format(value);
+    return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(value);
   };
   const updateTotals = (visible) => {
     if (!table.tFoot) table.createTFoot();
@@ -348,7 +348,7 @@ document.querySelectorAll("main .panel table").forEach((table, tableIndex) => {
     download.disabled = true;
     download.textContent = "Preparing Excel…";
     try {
-      const response = await fetch("/api/export-view.xlsx", {method: "POST", headers: {"Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || ""}, body: JSON.stringify({title: table.closest(".panel")?.querySelector("h2")?.textContent || `Filtered report ${tableIndex + 1}`, headers, rows: visible, totals})});
+      const response = await fetch("/api/export-view.xlsx", { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": document.querySelector('meta[name="csrf-token"]')?.content || "" }, body: JSON.stringify({ title: table.closest(".panel")?.querySelector("h2")?.textContent || `Filtered report ${tableIndex + 1}`, headers, rows: visible, totals }) });
       if (!response.ok) throw new Error("Export failed");
       const blob = await response.blob();
       const link = document.createElement("a");

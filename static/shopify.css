@@ -540,10 +540,6 @@
   margin: 10px 0 0;
 }
 
-.sub-nav-item {
-  margin-left: 18px;
-}
-
 .target-workflow-grid {
   display: grid;
   gap: 18px;

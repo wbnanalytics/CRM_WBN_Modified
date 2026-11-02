@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 from database import init_db, recent_sync_runs
-from uniware_service import sync_uniware
+from uniware_service import sync_uniware, sync_uniware_updates
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -42,9 +42,11 @@ def main():
     now = datetime.now(IST)
     checkpoint = required_checkpoint(now)
     if succeeded_since(checkpoint):
+        sync_uniware_updates(now - timedelta(hours=2), now)
         return
     rolling_days = max(1, int(os.getenv("UNIWARE_ROLLING_DAYS", "7")))
     sync_uniware(now.date() - timedelta(days=rolling_days - 1), now.date())
+    sync_uniware_updates(now - timedelta(hours=2), now)
 
 
 if __name__ == "__main__":

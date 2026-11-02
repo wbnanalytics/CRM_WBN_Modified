@@ -384,6 +384,14 @@ def sync_shopify_order_history(start_date, end_date):
         raise
 
 
+def _month_chunks(start, end):
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, date(cursor.year, cursor.month, monthrange(cursor.year, cursor.month)[1]))
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
+
+
 def _date_chunks(start, end, days=7):
     """Keep each ShopifyQL request comfortably below Shopify's 25k-row cap."""
     cursor = start

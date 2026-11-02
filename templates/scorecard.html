@@ -1,5 +1,6 @@
 {% extends "layout.html" %}
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='scorecard.css') }}">
 <meta name="csrf-token" content="{{ csrf_token() }}">
 {% if not is_admin %}<style>[data-open-dialog],[data-edit-agent],[data-toggle-agent],[data-open-scorecard],[data-open-appraisal],[data-edit-template],#newTemplateButton,[data-save-status],[data-appraisal-status],#addTemplateRow,#sendScorecardEmail,#sendAppraisalEmail{display:none!important}</style>{% endif %}
 <section class="scorecard-page">

@@ -11,7 +11,7 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("CRM_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "crm.db"
-PRIMARY_ADMIN_EMAIL = "varun.c@wellbeingnutrition.com"
+PRIMARY_ADMIN_EMAIL = "implementations@wellbeingnutrition.com"
 
 
 def utc_now():
@@ -1419,6 +1419,13 @@ def uniware_items_for_orders(sale_order_codes):
 def queue_sync_request(requested_by):
     now = utc_now()
     with db_connection() as db:
+        db.execute(
+            """UPDATE sync_requests
+               SET status='failed', error_message='Sync timed out or process terminated', completed_at=?
+               WHERE status IN ('queued','running')
+               AND datetime(requested_at) < datetime('now', '-30 minutes')""",
+            (now,),
+        )
         existing = db.execute(
             """SELECT * FROM sync_requests WHERE status IN ('queued','running')
                ORDER BY id DESC LIMIT 1"""
@@ -1461,7 +1468,15 @@ def finish_sync_request(request_id, status, result=None, error=None):
 
 
 def latest_sync_request():
+    now = utc_now()
     with db_connection() as db:
+        db.execute(
+            """UPDATE sync_requests
+               SET status='failed', error_message='Sync timed out or process terminated', completed_at=?
+               WHERE status IN ('queued','running')
+               AND datetime(requested_at) < datetime('now', '-30 minutes')""",
+            (now,),
+        )
         row = db.execute("SELECT * FROM sync_requests ORDER BY id DESC LIMIT 1").fetchone()
     if not row:
         return None

@@ -118,16 +118,22 @@ def _normal_order_code(value):
     return re.sub(r"[^A-Z0-9]", "", str(value or "").upper())
 
 
-def _search_orders(token, start, end):
-    from_dt = datetime.combine(start, time.min, tzinfo=IST)
-    to_dt = datetime.combine(end + timedelta(days=1), time.min, tzinfo=IST) - timedelta(milliseconds=1)
+def _search_orders(token, start, end, date_type="CREATED"):
+    from_dt = (
+        start.astimezone(IST) if isinstance(start, datetime)
+        else datetime.combine(start, time.min, tzinfo=IST)
+    )
+    to_dt = (
+        end.astimezone(IST) if isinstance(end, datetime)
+        else datetime.combine(end + timedelta(days=1), time.min, tzinfo=IST) - timedelta(milliseconds=1)
+    )
     rows = []
     offset = 0
     while True:
         data = _post(token, "/services/rest/v1/oms/saleOrder/search", {
             "fromDate": _utc_iso(from_dt),
             "toDate": _utc_iso(to_dt),
-            "dateType": "CREATED",
+            "dateType": date_type,
             "searchOptions": {
                 "displayLength": 200,
                 "displayStart": offset,
@@ -253,6 +259,39 @@ def _link_orders(start, end, uniware_orders):
     return shopify, links
 
 
+def _ingest_orders(token, search_rows, fallback_start, fallback_end, workers=None):
+    order_codes = list(dict.fromkeys(
+        str(row.get("code") or "") for row in search_rows if row.get("code")
+    ))
+    transformed = []
+    maximum = workers or int(_env("UNIWARE_SYNC_WORKERS") or 6)
+    with ThreadPoolExecutor(max_workers=max(1, min(maximum, 20))) as executor:
+        pending = {executor.submit(_get_order, token, code): code for code in order_codes}
+        for future in as_completed(pending):
+            transformed.append(_transform_order(future.result()))
+    transformed.sort(key=lambda pair: pair[0]["sale_order_code"])
+    saved_orders = saved_items = 0
+    plain_orders = []
+    for order, items in transformed:
+        order_saved, items_saved = replace_uniware_sale_order(order, items)
+        saved_orders += order_saved
+        saved_items += items_saved
+        plain_orders.append(order)
+    order_dates = [
+        date.fromisoformat(order["display_order_date"])
+        for order in plain_orders if order.get("display_order_date")
+    ]
+    link_start = min(order_dates) if order_dates else fallback_start
+    link_end = max(order_dates) if order_dates else fallback_end
+    shopify_rows, links = _link_orders(link_start, link_end, plain_orders)
+    update_uniware_shopify_links(links)
+    return {
+        "received": len(search_rows), "saved_orders": saved_orders,
+        "saved_items": saved_items, "shopify_orders": len(shopify_rows),
+        "matched_orders": len(links),
+    }
+
+
 def sync_uniware(start_date, end_date, workers=None):
     start = date.fromisoformat(start_date) if isinstance(start_date, str) else start_date
     end = date.fromisoformat(end_date) if isinstance(end_date, str) else end_date
@@ -268,35 +307,40 @@ def sync_uniware(start_date, end_date, workers=None):
         token = _access_token()
         search_rows = _search_orders(token, start, end)
         received = len(search_rows)
-        order_codes = [str(row.get("code") or "") for row in search_rows if row.get("code")]
-        transformed = []
-        # A lower default avoids exhausting ephemeral sockets while fetching
-        # thousands of item-level orders. Individual calls retry above.
-        maximum = workers or int(_env("UNIWARE_SYNC_WORKERS") or 6)
-        with ThreadPoolExecutor(max_workers=max(1, min(maximum, 20))) as executor:
-            pending = {executor.submit(_get_order, token, code): code for code in order_codes}
-            for future in as_completed(pending):
-                transformed.append(_transform_order(future.result()))
-        transformed.sort(key=lambda pair: pair[0]["sale_order_code"])
-        plain_orders = []
-        for order, items in transformed:
-            order_saved, items_saved = replace_uniware_sale_order(order, items)
-            saved_orders += order_saved
-            saved_items += items_saved
-            plain_orders.append(order)
-        shopify_rows, links = _link_orders(start, end, plain_orders)
-        update_uniware_shopify_links(links)
+        result = _ingest_orders(token, search_rows, start, end, workers)
+        saved_orders, saved_items = result["saved_orders"], result["saved_items"]
         finish_sync_run(run_id, "success", received, saved_orders + saved_items)
         return {
             "run_id": run_id,
             "rows_received": received,
             "orders_saved": saved_orders,
             "items_saved": saved_items,
-            "shopify_orders": len(shopify_rows),
-            "matched_orders": len(links),
-            "shopify_unmatched": max(len(shopify_rows) - len(links), 0),
-            "uniware_unmatched": max(saved_orders - len(links), 0),
+            "shopify_orders": result["shopify_orders"],
+            "matched_orders": result["matched_orders"],
+            "shopify_unmatched": max(result["shopify_orders"] - result["matched_orders"], 0),
+            "uniware_unmatched": max(saved_orders - result["matched_orders"], 0),
         }
+    except Exception as exc:
+        finish_sync_run(run_id, "failed", received, saved_orders + saved_items, str(exc)[:1000])
+        raise
+
+
+def sync_uniware_updates(start_datetime, end_datetime, workers=None):
+    """Upsert orders changed in Uniware, including returns for older orders."""
+    start = start_datetime.astimezone(IST)
+    end = end_datetime.astimezone(IST)
+    if start > end:
+        raise ValueError("Start datetime must not be after end datetime")
+    run_id = start_sync_run("uniware", "sale_order_updates", start.isoformat(), end.isoformat())
+    received = saved_orders = saved_items = 0
+    try:
+        token = _access_token()
+        search_rows = _search_orders(token, start, end, "UPDATED")
+        received = len(search_rows)
+        result = _ingest_orders(token, search_rows, start.date(), end.date(), workers)
+        saved_orders, saved_items = result["saved_orders"], result["saved_items"]
+        finish_sync_run(run_id, "success", received, saved_orders + saved_items)
+        return {"run_id": run_id, "rows_received": received, **result}
     except Exception as exc:
         finish_sync_run(run_id, "failed", received, saved_orders + saved_items, str(exc)[:1000])
         raise

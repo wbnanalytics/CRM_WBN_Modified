@@ -290,14 +290,11 @@ def refresh_ticker_data():
     latest = {}
     schedules = {
         "shopify": "Hourly",
-        "zoho": "09:00 / 21:00 IST",
-        "bik": "09:00 / 21:00 IST",
-        "uniware": "09:00 / 21:00 IST · hourly retry",
     }
     for row in recent_sync_runs(100):
         latest.setdefault(row["source"], row)
     items = []
-    for key, label in (("shopify", "Shopify"), ("zoho", "Zoho Desk"), ("bik", "BIK"), ("uniware", "Uniware")):
+    for key, label in (("shopify", "Shopify"),):
         row = latest.get(key)
         items.append({
             "key": key, "label": label,
@@ -500,17 +497,12 @@ def logout():
 @permission_required("dashboard")
 def dashboard():
     seed_default_employees()
-    view = request.args.get("view", "sales")
-    if view not in {"cs", "sales", "attendance"}:
-        view = "sales"
-    selection = selected_reporting_period("daily" if view == "cs" else "monthly")
+    selection = selected_reporting_period("monthly")
     report = shopify_sales_report(selection["period"], selection["anchor"])
     managed = [row for row in report["rows"] if row["include_in_team"] and row["attainment"] is not None]
     top_performers = sorted(managed, key=lambda row: (-row["attainment"], row["display_name"]))[:3]
     bottom_performers = sorted(managed, key=lambda row: (row["attainment"], row["display_name"]))[:3]
-    selected_agent = request.args.get("agent", "").strip() if view == "cs" else ""
-    cs_report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), selected_agent)
-    sales_scope = request.args.get("scope", "overall") if view == "sales" else "overall"
+    sales_scope = request.args.get("scope", "overall")
     if sales_scope not in {"overall", "crm", "nutritionists", "comparison"}:
         sales_scope = "overall"
     sales_comparison = None
@@ -522,29 +514,14 @@ def dashboard():
         sales_management_report = sales_comparison["overall"]
     else:
         sales_management_report = sales_management(report, sales_scope)
-    cs_management_report = cs_management(cs_report)
-    attendance_report = attendance_period(selection["start"], selection["end"], selection["today"])
     return render_template(
-        "dashboard_v2.html", active_page="dashboard", page_title={"cs": "CS Dashboard", "sales": "Sales Dashboard", "attendance": "Attendance Dashboard"}[view],
-        view=view, selection=selection, cs_report=cs_report, attendance_report=attendance_report,
+        "dashboard_v2.html", active_page="dashboard", page_title="Sales Dashboard",
+        selection=selection,
         report=report, sales_management=sales_management_report,
-        cs_management=cs_management_report,
         top_performers=top_performers, bottom_performers=bottom_performers,
         selected_month=selection["month"], sales_scope=sales_scope, sales_comparison=sales_comparison,
         max_weekly=max(report["team"]["values"] + report["team"]["targets"] + [1]),
         available_years=reporting_years(selection["today"]),
-    )
-
-
-@app.route("/dashboard/cs.xlsx")
-@permission_required("dashboard")
-def download_cs_dashboard():
-    selection = selected_reporting_period("daily")
-    report = cs_dashboard(selection["start"].isoformat(), selection["end"].isoformat(), request.args.get("agent", "").strip())
-    return send_file(
-        cs_dashboard_excel(report), as_attachment=True,
-        download_name=f"cs-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -738,18 +715,6 @@ def download_cs_details():
                      as_attachment=True,
                      download_name=f"cs-underlying-{channel}-{metric}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@app.route("/dashboard/attendance.xlsx")
-@permission_required("dashboard")
-def download_attendance_dashboard():
-    selection = selected_reporting_period("monthly")
-    report = attendance_period(selection["start"], selection["end"], selection["today"])
-    return send_file(
-        attendance_dashboard_excel(report), as_attachment=True,
-        download_name=f"attendance-dashboard-{selection['period']}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
 
 
 @app.route("/zoho")
@@ -1174,7 +1139,7 @@ def request_full_sync():
             subprocess.Popen(
                 [sys.executable, str(Path(__file__).resolve().parent / "sync_all.py")],
                 cwd=Path(__file__).resolve().parent,
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True,
             )
     return jsonify({
         "id": sync_request["id"], "status": sync_request["status"],

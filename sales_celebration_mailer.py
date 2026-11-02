@@ -6,7 +6,6 @@ from datetime import date, timedelta
 
 from dotenv import load_dotenv
 
-from attendance_service import attendance_period
 from database import list_shopify_employees, shopify_sales_between
 from scorecard_mailer import send_html_email
 from shopify_service import sales_report
@@ -137,11 +136,14 @@ def _email_shell(title, eyebrow, intro, content, period_label):
 
 
 def ranking_email(kind, start, end, test=False):
-    if kind != "daily":
+    if kind not in {"daily", "mtd"}:
         raise ValueError("Weekly, monthly, and yearly ranking emails are discontinued")
-    label = start.strftime("%d %b %Y")
-    title = "Yesterday’s Top 3 Sales Performers"
-    subject = f"Congratulations! 🎉 Yesterday’s Top 3 Sales Performers | {label}"
+    label = start.strftime("%d %b %Y") if kind == "daily" else f"{start:%d %b} – {end:%d %b %Y}"
+    title = "Yesterday’s Top 3 Sales Performers" if kind == "daily" else "Month-to-Date Sales Performers"
+    subject = (
+        f"Congratulations! 🎉 Yesterday’s Top 3 Sales Performers | {label}"
+        if kind == "daily" else f"Congratulations! 🎉 Month-to-Date Sales Report | {label}"
+    )
     all_rows = _period_rankings(start, end)
     rows = [row for row in all_rows if row["sales"] > 0]
     content = f'<table role="presentation" width="100%" cellspacing="0" cellpadding="0">{_ranking_rows(rows)}</table>'
@@ -170,12 +172,26 @@ def ranking_email(kind, start, end, test=False):
                 "WBN – NUTRITIONISTS",
             )
         )
+    else:
+        crm_month = [row for row in all_rows if "nutrition" not in (row.get("role") or "").casefold()]
+        nutrition_month = [row for row in all_rows if "nutrition" in (row.get("role") or "").casefold()]
+        content = (
+            content
+            + _full_report_section(
+                "Team CRM · Month-to-date sales", label, crm_month,
+                "TEAM CRM · SALES & CUSTOMER SUCCESS",
+            )
+            + _full_report_section(
+                "WBN – Nutritionists · Month-to-date sales", label, nutrition_month,
+                "WBN – NUTRITIONISTS",
+            )
+        )
     prefix = "[TEST – APPROVAL REQUIRED] " if test else ""
     return {
         "key": kind,
         "subject": prefix + subject,
         "body": _email_shell(
-            title, "SALES RECOGNITION",
+            title, "SALES RECOGNITION" if kind == "daily" else "MONTH-TO-DATE SALES",
             "Congratulations to our outstanding performers. Your consistency, ownership, and customer focus made this achievement possible.",
             content, label,
         ),
@@ -187,29 +203,15 @@ def ranking_email(kind, start, end, test=False):
 def build_samples(today=None):
     today = today or date.today()
     yesterday = today - timedelta(days=1)
-    month_start = date(today.year, today.month, 1)
-    prior_month_end = month_start - timedelta(days=1)
-    prior_month_start = date(prior_month_end.year, prior_month_end.month, 1)
     samples = []
-    monthly_label = prior_month_start.strftime("%B %Y")
     daily_sample = ranking_email("daily", yesterday, yesterday, test=True)
     samples.append(daily_sample)
 
-    attendance = attendance_period(prior_month_start, prior_month_end)
-    no_leave = [row["employee_name"] for row in attendance["rows"] if row["present"] > 0 and row["planned"] == 0 and row["unplanned"] == 0]
-    no_leave_content = (
-        '<div style="padding:18px;border-radius:14px;background:#f6f9f2;border:1px solid #e1eadc">'
-        + (_name_chips(no_leave) if no_leave else '<span style="color:#6c7b74">No qualifying employees in the selected completed month.</span>') + '</div>'
-    )
-    samples.append({
-        "key": "perfect_attendance",
-        "subject": f"[TEST – APPROVAL REQUIRED] Congratulations! 🎉 Perfect Attendance Recognition | {monthly_label}",
-        "body": _email_shell("Perfect Attendance Recognition", "ATTENDANCE MILESTONE",
-            "A special appreciation for the team members who maintained a complete attendance record without taking leave during the month.",
-            no_leave_content, monthly_label),
-    })
-
     daily_report = sales_report("daily", yesterday)
+    month_start = date(today.year, today.month, 1)
+    prior_month_end = month_start - timedelta(days=1)
+    prior_month_start = date(prior_month_end.year, prior_month_end.month, 1)
+    monthly_label = prior_month_start.strftime("%B %Y")
     monthly_report = sales_report("monthly", prior_month_start)
     achieved = []
     seen = set()

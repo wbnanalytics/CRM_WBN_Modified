@@ -168,7 +168,10 @@ def run(mode, now=None):
     if mode == "daily":
         if _is_working_day(today):
             yesterday = today - timedelta(days=1)
-            send_ranking("daily", yesterday, yesterday)
+            if today.weekday() == 0:
+                send_ranking("mtd", date(yesterday.year, yesterday.month, 1), yesterday)
+            else:
+                send_ranking("daily", yesterday, yesterday)
     elif mode in {"weekly", "closing"}:
         # Retain compatibility with any old VM timer until deployment removes it,
         # but never send the discontinued weekly/monthly/yearly ranking emails.

@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,71 +11,91 @@
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='wbn-favicon.png') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap"
+    rel="stylesheet">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='scorecard.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-9') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='attendance.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-9') }}">
   <script src="{{ url_for('static', filename='app.js', v='20260826-9') }}" defer></script>
 </head>
+
 <body>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar">
-      <a class="brand" href="{{ url_for('dashboard') }}"><img class="brand-logo" src="{{ url_for('static', filename='wbn-logo.png') }}" alt=""><span>wellbeing<br>nutrition</span></a>
+      <a class="brand" href="{{ url_for('dashboard') }}"><img class="brand-logo"
+          src="{{ url_for('static', filename='wbn-logo.png') }}" alt=""><span>wellbeing<br>nutrition</span></a>
       <nav aria-label="Main navigation">
         <span class="nav-label">WORKSPACE</span>
-        {% if can_access('dashboard') %}<a class="nav-item {{ 'active' if active_page == 'dashboard' }}" href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>{% endif %}
-        {% if can_access('attendance.view') %}<a class="nav-item {{ 'active' if active_page == 'attendance' }}" href="{{ url_for('attendance') }}"><span class="nav-glyph boxed">A</span>Attendance</a>{% endif %}
-        <span class="nav-label section-label">CS METRIC</span>
-        {% if can_access('zoho.customer_experience') or can_access('zoho.customer_escalation') %}<a class="nav-item {{ 'active' if active_page == 'zoho' }}" href="{{ url_for('zoho') }}"><span class="nav-glyph boxed">Z</span>Zoho</a>{% endif %}
-        {% if can_access('bik.customer_tickets') or can_access('bik.all_conversations') %}<a class="nav-item {{ 'active' if active_page == 'bik' }}" href="{{ url_for('bik') }}"><span class="nav-glyph boxed">B</span>BIK</a>{% endif %}
+        {% if can_access('dashboard') %}<a class="nav-item {{ 'active' if active_page == 'dashboard' }}"
+          href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>{% endif %}
         {% if can_access('shopify.view') %}<span class="nav-label section-label">SALES REPORTING</span>
-        <a class="nav-item {{ 'active' if active_page == 'order_report' }}" href="{{ url_for('order_report_view') }}"><span class="nav-glyph boxed">O</span>Order Report</a>
-        <a class="nav-item {{ 'active' if active_page == 'product_report' }}" href="{{ url_for('product_report') }}"><span class="nav-glyph boxed">P</span>Product Report</a>
-        <a class="nav-item {{ 'active' if active_page == 'customer_loyalty' }}" href="{{ url_for('customer_loyalty') }}"><span class="nav-glyph boxed">C</span>Customer Loyalty</a>
-        <a class="nav-item {{ 'active' if active_page == 'shopify' }}" href="{{ url_for('shopify') }}"><span class="nav-glyph boxed">S</span>Shopify Sales</a>{% endif %}
-        {% if is_admin %}<a class="nav-item sub-nav-item {{ 'active' if active_page == 'shopify_targets' }}" href="{{ url_for('shopify_targets') }}"><span class="nav-glyph">◎</span>Targets</a>{% endif %}
-        <span class="nav-label section-label">PERFORMANCE</span>
-        {% if can_access_scorecard() %}<a class="nav-item {{ 'active' if active_page == 'scorecard' }}" href="{{ url_for('scorecard') }}"><span class="nav-glyph">◇</span>Scorecard</a>{% endif %}
+        <a class="nav-item {{ 'active' if active_page == 'order_report' }}"
+          href="{{ url_for('order_report_view') }}"><span class="nav-glyph boxed">O</span>Order Report</a>
+
+        <a class="nav-item {{ 'active' if active_page == 'product_report' }}"
+          href="{{ url_for('product_report') }}"><span class="nav-glyph boxed">P</span>Product Report</a>
+
+        <a class="nav-item {{ 'active' if active_page == 'shopify' }}" href="{{ url_for('shopify') }}"><span
+            class="nav-glyph boxed">S</span>Shopify Sales</a>{% endif %}
         {% if is_admin %}<span class="nav-label section-label">ADMINISTRATION</span>
-        <a class="nav-item {{ 'active' if active_page == 'users' }}" href="{{ url_for('manage_users') }}"><span class="nav-glyph boxed">U</span>User Management</a>{% endif %}
+        <a class="nav-item {{ 'active' if active_page == 'users' }}" href="{{ url_for('manage_users') }}"><span
+            class="nav-glyph boxed">U</span>User Management</a>{% endif %}
       </nav>
       <div class="sidebar-foot">
-        <div class="user-avatar">CS</div><div><strong>{{ session.get('user', {}).get('name', 'CS Team') }}</strong><span>{{ 'Super Admin' if is_super_admin else session.get('user', {}).get('role', 'User')|title }} · {{ session.get('user', {}).get('email', 'Internal workspace') }}</span></div>
+        <div class="user-avatar">CS</div>
+        <div><strong>{{ session.get('user', {}).get('name', 'CS Team') }}</strong><span>{{ 'Super Admin' if
+            is_super_admin else session.get('user', {}).get('role', 'User')|title }} · {{ session.get('user',
+            {}).get('email', 'Internal workspace') }}</span></div>
         <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
       </div>
     </aside>
     <main class="main-content">
-      <header class="mobile-header"><button id="menuButton" aria-label="Open navigation">☰</button><span class="mini-logo">WBN</span></header>
+      <header class="mobile-header"><button id="menuButton" aria-label="Open navigation">☰</button><span
+          class="mini-logo">WBN</span></header>
       <div class="refresh-ticker" aria-label="Data refresh status">
         <span class="ticker-live"><i></i><small>LIVE DATA</small><strong data-ist-clock>IST</strong></span>
         <div class="ticker-window">
           <div class="ticker-track">
-            {% for repeat in range(2) %}{% for item in refresh_ticker['items'] %}<span class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ 'Updated' if item.status == 'success' else item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{ item.completed_at|ist_datetime }}</time>{% endif %}<small>Auto: {{ item.schedule }}</small></span>{% endfor %}{% endfor %}
+            {% for repeat in range(4) %}{% for item in refresh_ticker['items'] %}<span
+              class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ 'Updated' if item.status == 'success'
+                else item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{
+                item.completed_at|ist_datetime }}</time>{% endif %}<small>Auto: {{ item.schedule }}</small></span>{%
+            endfor %}{% endfor %}
           </div>
         </div>
-        {% if is_admin %}<button class="announcement-trigger" type="button" data-announcement-open aria-haspopup="dialog">Announcement</button>
+        {% if is_admin %}<button class="announcement-trigger" type="button" data-announcement-open
+          aria-haspopup="dialog">Announcement</button>
         <dialog class="announcement-dialog" data-announcement-dialog aria-labelledby="announcement-dialog-title">
           <div class="announcement-popover">
-            <button class="announcement-close" type="button" data-announcement-close aria-label="Close announcement editor">&times;</button>
+            <button class="announcement-close" type="button" data-announcement-close
+              aria-label="Close announcement editor">&times;</button>
             <strong id="announcement-dialog-title">Broadcast announcement</strong>
             <p>Visible to every signed-in portal user until you clear it.</p>
             <form method="post" action="{{ url_for('update_announcement_ticker') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <input type="hidden" name="next" value="{{ request.full_path if request.query_string else request.path }}">
-              <textarea name="message" maxlength="500" rows="4" placeholder="Type an announcement…">{{ announcement_ticker }}</textarea>
-              <div><button class="outline-button" type="button" data-announcement-close>Cancel</button><button class="danger-button" type="submit" name="action" value="clear">Clear</button><button class="primary-button" type="submit" name="action" value="save">Save &amp; broadcast</button></div>
+              <input type="hidden" name="next"
+                value="{{ request.full_path if request.query_string else request.path }}">
+              <textarea name="message" maxlength="500" rows="4"
+                placeholder="Type an announcement…">{{ announcement_ticker }}</textarea>
+              <div><button class="outline-button" type="button" data-announcement-close>Cancel</button><button
+                  class="danger-button" type="submit" name="action" value="clear">Clear</button><button
+                  class="primary-button" type="submit" name="action" value="save">Save &amp; broadcast</button></div>
             </form>
           </div>
         </dialog>{% endif %}
       </div>
-      {% if announcement_ticker %}<div class="broadcast-ticker" role="status" aria-label="Portal announcement"><span class="broadcast-label">ANNOUNCEMENT</span><span class="broadcast-message">{{ announcement_ticker }}</span></div>{% endif %}
-      {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}</div>{% endif %}{% endwith %}
+      {% if announcement_ticker %}<div class="broadcast-ticker" role="status" aria-label="Portal announcement"><span
+          class="broadcast-label">ANNOUNCEMENT</span><span class="broadcast-message">{{ announcement_ticker }}</span>
+      </div>{% endif %}
+      {% with messages = get_flashed_messages(with_categories=true) %}{% if messages %}<div class="flash-stack">{% for
+        category, message in messages %}<div class="flash-message {{ category }}">{{ message }}</div>{% endfor %}</div>
+      {% endif %}{% endwith %}
       {% block content %}{% endblock %}
     </main>
   </div>
 </body>
+
 </html>
