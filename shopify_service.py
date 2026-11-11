@@ -16,7 +16,6 @@ from database import (
     shopify_sales_summary, shopify_targets_between, start_sync_run,
 )
 
-
 IST = ZoneInfo("Asia/Kolkata")
 API_VERSION = "2026-07"
 UNASSIGNED_EMPLOYEE_KEY = "shopify-unassigned"
@@ -56,10 +55,8 @@ DEFAULT_EMPLOYEES = (
     ("Shareena Dsilva", "Nutritionist", 0),
 )
 
-
 class ShopifyError(RuntimeError):
     pass
-
 
 def _env(*keys):
     return next((os.getenv(key) for key in keys if os.getenv(key)), None)
@@ -119,7 +116,11 @@ def _access_token():
         },
         timeout=30,
     )
-    response.raise_for_status()
+    # response.raise_for_status()
+    if not response.ok:
+        raise ShopifyError(
+            f"Shopify HTTP {response.status_code}: {response.text[:500]}"
+    )
     payload = response.json()
     if not payload.get("access_token"):
         raise ShopifyError(payload.get("error_description") or "Shopify did not issue an access token")
