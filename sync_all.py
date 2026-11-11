@@ -108,6 +108,7 @@ def main():
             raise
         finally:
             release_file_lock(lock)
-            
+
+
 if __name__ == "__main__":
     main()
