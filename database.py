@@ -11,7 +11,9 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.getenv("CRM_DATA_DIR", BASE_DIR / "data"))
 DB_PATH = DATA_DIR / "crm.db"
-print("DATABASE PATH:", DB_PATH.resolve())
+print("DATABASE PATH:", DB_PATH.resolve(), flush=True)
+print("DATABASE EXISTS:", DB_PATH.exists(), flush=True)
+print("DATABASE SIZE:", DB_PATH.stat().st_size if DB_PATH.exists() else 0, flush=True)
 PRIMARY_ADMIN_EMAIL = "implementations@wellbeingnutrition.com"
 
 
