@@ -116,11 +116,7 @@ def _access_token():
         },
         timeout=30,
     )
-    # response.raise_for_status()
-    if not response.ok:
-        raise ShopifyError(
-            f"Shopify HTTP {response.status_code}: {response.text[:500]}"
-    )
+    response.raise_for_status()
     payload = response.json()
     if not payload.get("access_token"):
         raise ShopifyError(payload.get("error_description") or "Shopify did not issue an access token")
