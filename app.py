@@ -111,6 +111,34 @@ def sync_attendance_business_roles():
 sync_attendance_business_roles()
 
 
+def _start_recognition_scheduler():
+    import threading
+    import time
+
+    def _worker():
+        last_daily_date = None
+        while True:
+            try:
+                now = datetime.now(IST)
+                # Check for daily recognition at 11:00 AM IST (Monday to Friday)
+                if now.weekday() < 5 and now.hour == 11 and last_daily_date != now.date():
+                    last_daily_date = now.date()
+                    try:
+                        from sales_recognition_scheduler import run as run_recognition
+                        run_recognition("daily", now=now)
+                    except Exception as err:
+                        app.logger.error("Recognition daily run failed: %s", err)
+            except Exception as err:
+                app.logger.error("Recognition scheduler loop error: %s", err)
+            time.sleep(30)
+
+    thread = threading.Thread(target=_worker, name="wbn-recognition-scheduler", daemon=True)
+    thread.start()
+
+
+_start_recognition_scheduler()
+
+
 REPORT_SOURCES = {
     "shopify": {
         "name": "Shopify Sales",
