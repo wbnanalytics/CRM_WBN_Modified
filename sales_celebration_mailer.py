@@ -11,7 +11,8 @@ from scorecard_mailer import send_html_email
 from shopify_service import sales_report
 
 
-IST_TEST_RECIPIENT = "varun.c@wellbeingnutrition.com"
+#IST_TEST_RECIPIENT = "varun.c@wellbeingnutrition.com"
+IST_TEST_RECIPIENT = "shivani.gire@wellbeingnutrition.com"
 
 
 def _inr(value):
@@ -239,7 +240,9 @@ def build_samples(today=None):
 
 def send_test_samples(recipient, sample_key="all"):
     if recipient.casefold() != IST_TEST_RECIPIENT:
-        raise ValueError("Approval samples are hard-locked to varun.c@wellbeingnutrition.com")
+        #raise ValueError("Approval samples are hard-locked to varun.c@wellbeingnutrition.com")
+         raise ValueError("Approval samples are hard-locked to shivani.gire@wellbeingnutrition.com")
+
     samples = build_samples()
     logo_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static", "wbn-logo.png")
     if not os.path.exists(logo_path):
@@ -257,6 +260,7 @@ def send_test_samples(recipient, sample_key="all"):
         print(f'SENT {sample["key"]} -> {recipient}')
 
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Send approval-only CRM recognition email samples")
     parser.add_argument("--send-tests", metavar="EMAIL")
@@ -264,5 +268,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     load_dotenv(".env")
     if not args.send_tests:
-        parser.error("Use --send-tests varun.c@wellbeingnutrition.com")
+        #parser.error("Use --send-tests varun.c@wellbeingnutrition.com")
+        parser.error("Use --send-tests shivani.gire@wellbeingnutrition.com")
     send_test_samples(args.send_tests, args.sample)

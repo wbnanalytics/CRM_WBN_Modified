@@ -14,33 +14,30 @@ from dotenv import load_dotenv
 from flask import Flask, abort, flash, jsonify, redirect, render_template, request, send_file, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from database import (
-    PRIMARY_ADMIN_EMAIL, bik_conversation_metrics, bik_metrics, bulk_set_shopify_targets,
+    PRIMARY_ADMIN_EMAIL, bulk_set_shopify_targets,
     get_portal_permissions, get_portal_user, get_setting, grant_permission_to_all_users, init_db, latest_sync_request,
     list_portal_users, list_shopify_employees, queue_sync_request, recent_sync_runs,
-    save_portal_user, set_portal_permissions, set_setting, shopify_targets_between, zoho_metrics,
+    save_portal_user, set_portal_permissions, set_setting, shopify_targets_between,
     shopify_orders_between, shopify_product_sales_between, shopify_sales_between,
 )
 
-from report_services import ZOHO_DEPARTMENTS
 import scorecard_service as scorecards
 from scorecard_export import appraisal_excel, scorecard_excel
 from scorecard_mailer import email_ready as scorecard_email_ready, send_record_email
 from shopify_service import sales_report as shopify_sales_report, seed_default_employees, shopify_configured
 from shopify_targets_io import performance_excel, read_target_upload, sales_underlying_excel, target_template
 from attendance_service import attendance_month, attendance_period, set_attendance, set_employee_profile, set_leave_balance
-from cs_dashboard_service_v2 import cs_dashboard, cs_detail_rows
 from dashboard_export import (
-    attendance_dashboard_excel, cs_dashboard_excel, cs_detail_excel,
+    attendance_dashboard_excel,
     product_comparison_excel, product_report_excel, sales_comparison_excel, sales_trend_excel,
 )
-from management_dashboard_service import sales_management, cs_management, matches_sales_scope, is_crm_admin, product_management
-from loyalty_export import loyalty_comparison_workbook, loyalty_workbook
-from loyalty_service import loyalty_report, order_report
+from management_dashboard_service import sales_management, matches_sales_scope, is_crm_admin, product_management
+from loyalty_service import loyalty_report
 from report_view_export import (
     comparison_view_excel, loyalty_comparison_view_excel, loyalty_view_excel,
     product_view_excel, underlying_view_excel, visible_table_excel,
 )
-from portal_export import attendance_planner_workbook, source_metrics_workbook, workbook_from_tables
+from portal_export import attendance_planner_workbook, workbook_from_tables
 
 
 load_dotenv()
@@ -68,11 +65,7 @@ DATE_PRESETS = (
 )
 
 PORTAL_PERMISSIONS = (
-    ("dashboard", "Dashboard", "Combined CS Metric dashboard"),
-    ("zoho.customer_experience", "Zoho · Customer Experience", "Customer Experience tickets"),
-    ("zoho.customer_escalation", "Zoho · Customer Escalation", "Escalation queue tickets"),
-    ("bik.customer_tickets", "BIK · Customer Tickets", "Ticket performance and service metrics"),
-    ("bik.all_conversations", "BIK · All Conversations", "Conversation and message metrics"),
+    ("dashboard", "Dashboard", "Sales dashboard"),
     ("shopify.view", "Shopify · Sales Reports", "Daily, weekly and monthly employee sales"),
     ("attendance.view", "Attendance · Planner", "View the monthly CRM attendance planner"),
     ("scorecard.view", "Scorecard · Dashboard", "Scorecard overview and performance trends"),
@@ -101,6 +94,8 @@ ATTENDANCE_BUSINESS_ROLES = {
 }
 
 
+
+
 def sync_attendance_business_roles():
     """Fill missing business-team roles from the manager-maintained attendance roster."""
     for portal_user in list_portal_users():
@@ -117,21 +112,6 @@ sync_attendance_business_roles()
 
 
 REPORT_SOURCES = {
-    "zoho": {
-        "name": "Zoho Desk",
-        "description": "Customer Experience and Escalation ticket metrics",
-        "reports": ["Customer Experience", "Escalation Queue"],
-        "required_keys": [
-            "ZOHO_CLIENT_ID", "ZOHO_CLIENT_SECRET", "ZOHO_REFRESH_TOKEN",
-            "ZOHO_ORG_ID", "ZOHO_ACCOUNTS_URL", "ZOHO_DESK_URL",
-        ],
-    },
-    "bik": {
-        "name": "BIK",
-        "description": "Conversation and customer ticket performance",
-        "reports": ["All Conversation Report", "Customer Ticket Report"],
-        "required_keys": ["BIK_KEY", "BIK_SECRET", "BIK_APP_ID"],
-    },
     "shopify": {
         "name": "Shopify Sales",
         "description": "Employee-attributed daily, weekly and monthly sales",
@@ -335,46 +315,6 @@ def require_json_csrf():
         abort(400)
 
 
-def get_zoho_access_token():
-    response = requests.post(
-        f"{os.getenv('ZOHO_ACCOUNTS_URL')}/oauth/v2/token",
-        data={
-            "refresh_token": os.getenv("ZOHO_REFRESH_TOKEN"),
-            "client_id": os.getenv("ZOHO_CLIENT_ID"),
-            "client_secret": os.getenv("ZOHO_CLIENT_SECRET"),
-            "grant_type": "refresh_token",
-        },
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()["access_token"]
-
-
-def get_zoho_tickets(limit=100):
-    response = requests.get(
-        f"{os.getenv('ZOHO_DESK_URL')}/api/v1/tickets",
-        headers={
-            "Authorization": f"Zoho-oauthtoken {get_zoho_access_token()}",
-            "orgId": os.getenv("ZOHO_ORG_ID"),
-        },
-        params={"limit": limit},
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def test_bik_auth():
-    response = requests.post(
-        "https://bikapi.bikayi.app/integrations/bikPlatformFunctions-authPartnerViaKey",
-        auth=(os.getenv("BIK_KEY"), os.getenv("BIK_SECRET")),
-        json={"appId": os.getenv("BIK_APP_ID")},
-        timeout=30,
-    )
-    response.raise_for_status()
-    return response.json()
-
-
 @app.context_processor
 def inject_globals():
     refresh_ticker = refresh_ticker_data() if session.get("user") else {"items": [], "latest": None}
@@ -447,10 +387,6 @@ def index():
     if session.get("preview_user") or session.get("user"):
         if can_access("dashboard"):
             return redirect(url_for("dashboard"))
-        if can_access("zoho.customer_experience") or can_access("zoho.customer_escalation"):
-            return redirect(url_for("zoho"))
-        if can_access("bik.customer_tickets") or can_access("bik.all_conversations"):
-            return redirect(url_for("bik"))
         if can_access("shopify.view"):
             return redirect(url_for("shopify"))
         if can_access("attendance.view"):
@@ -687,100 +623,6 @@ def download_product_report_details():
     )
 
 
-@app.route("/dashboard/cs/details")
-@permission_required("dashboard")
-def cs_dashboard_details():
-    selection = selected_reporting_period("daily")
-    channel = request.args.get("channel", "all")
-    metric = request.args.get("metric", "total")
-    allowed_channels = {"all", "email", "inbound", "chats", "orm"}
-    allowed_metrics = {"total", "resolved", "open", "escalated", "spam", "genuine", "untagged",
-                       "working_hours", "outside_hours", "agent_replies", "bot_handled", "bot_resolved",
-                       "human_handover", "instagram_dm", "instagram_comment", "facebook_dm", "facebook_comment"}
-    if channel not in allowed_channels or metric not in allowed_metrics:
-        abort(400)
-    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric, request.args.get("agent", "").strip())
-    return render_template("cs_details.html", active_page="dashboard", page_title="CS underlying data",
-                           selection=selection, channel=channel, metric=metric, rows=rows,
-                           selected_agent=request.args.get("agent", "").strip())
-
-
-@app.route("/dashboard/cs/details.xlsx")
-@permission_required("dashboard")
-def download_cs_details():
-    selection = selected_reporting_period("daily")
-    channel = request.args.get("channel", "all")
-    metric = request.args.get("metric", "total")
-    rows = cs_detail_rows(selection["start"].isoformat(), selection["end"].isoformat(), channel, metric, request.args.get("agent", "").strip())
-    return send_file(cs_detail_excel(rows, f"{channel.title()} — {metric.replace('_', ' ').title()}"),
-                     as_attachment=True,
-                     download_name=f"cs-underlying-{channel}-{metric}-{selection['start'].isoformat()}-{selection['end'].isoformat()}.xlsx",
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-
-
-@app.route("/zoho")
-def zoho():
-    start, end, preset = selected_range()
-    department_key = request.args.get("department", "customer_experience")
-    if not can_access(f"zoho.{department_key}"):
-        allowed = next((key.split(".", 1)[1] for key in session.get("user", {}).get("permissions", []) if key.startswith("zoho.")), None)
-        if session.get("user", {}).get("role") != "admin" and not allowed:
-            abort(403)
-        if allowed:
-            department_key = allowed
-    department = ZOHO_DEPARTMENTS.get(department_key, ZOHO_DEPARTMENTS["customer_experience"])
-    metrics = zoho_metrics(start.isoformat(), end.isoformat(), department["id"])
-    detailed = cs_dashboard(start.isoformat(), end.isoformat())
-    return render_template("source.html", active_page="zoho", page_title="Zoho Desk", source_key="zoho", source=REPORT_SOURCES["zoho"], metrics=metrics, detailed_metrics=[detailed["channels"]["email"], detailed["channels"]["inbound"]], departments=ZOHO_DEPARTMENTS, department_key=department_key, department=department, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
-
-
-@app.route("/zoho.xlsx")
-def download_zoho_report():
-    start, end, _preset = selected_range()
-    department_key = request.args.get("department", "customer_experience")
-    if not can_access(f"zoho.{department_key}"):
-        abort(403)
-    department = ZOHO_DEPARTMENTS.get(department_key, ZOHO_DEPARTMENTS["customer_experience"])
-    metrics = zoho_metrics(start.isoformat(), end.isoformat(), department["id"])
-    return send_file(
-        source_metrics_workbook("Zoho Desk", metrics, start, end, department["name"]), as_attachment=True,
-        download_name=f"zoho-{department_key}-{start.isoformat()}-{end.isoformat()}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route("/bik")
-def bik():
-    if not (can_access("bik.customer_tickets") or can_access("bik.all_conversations")):
-        abort(403)
-    start, end, preset = selected_range()
-    allowed_reports = [key for key in ("customer_tickets", "all_conversations") if can_access(f"bik.{key}")]
-    report_key = request.args.get("report", allowed_reports[0])
-    if report_key not in allowed_reports:
-        report_key = allowed_reports[0]
-    metrics = bik_metrics(start.isoformat(), end.isoformat()) if report_key == "customer_tickets" else bik_conversation_metrics(start.isoformat(), end.isoformat())
-    detailed = cs_dashboard(start.isoformat(), end.isoformat())
-    return render_template("source.html", active_page="bik", page_title="BIK", source_key="bik", source=REPORT_SOURCES["bik"], metrics=metrics, detailed_metrics=[detailed["channels"]["chats"], detailed["channels"]["orm"]], bik_report=report_key, allowed_bik_reports=allowed_reports, start=start, end=end, preset=preset, date_presets=DATE_PRESETS)
-
-
-@app.route("/bik.xlsx")
-def download_bik_report():
-    if not (can_access("bik.customer_tickets") or can_access("bik.all_conversations")):
-        abort(403)
-    start, end, _preset = selected_range()
-    report_key = request.args.get("report", "customer_tickets")
-    if report_key == "all_conversations" and not can_access("bik.all_conversations"):
-        abort(403)
-    if report_key != "all_conversations" and not can_access("bik.customer_tickets"):
-        abort(403)
-    metrics = bik_conversation_metrics(start.isoformat(), end.isoformat()) if report_key == "all_conversations" else bik_metrics(start.isoformat(), end.isoformat())
-    return send_file(
-        source_metrics_workbook("BIK", metrics, start, end, report_key.replace("_", " ").title()), as_attachment=True,
-        download_name=f"bik-{report_key}-{start.isoformat()}-{end.isoformat()}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
 @app.route("/shopify")
 @permission_required("shopify.view")
 def shopify():
@@ -848,65 +690,6 @@ def product_report():
         product_comparison=product_comparison, comparison_products=comparison_products,
         comparison_max_quantity=comparison_max_quantity,
         available_years=reporting_years(selection["today"]),
-    )
-
-
-@app.route("/shopify/orders")
-@permission_required("shopify.view")
-def order_report_view():
-    selection = selected_reporting_period("monthly")
-    scope = request.args.get("scope", "overall").strip()
-    if scope not in {"overall", "crm", "nutritionists", "comparison"}:
-        scope = "overall"
-    common = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
-    comparison = None
-    if scope == "comparison":
-        comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
-        report = comparison["overall"]
-    else:
-        report = order_report(scope=scope, status=request.args.get("status", "").strip(), **common)
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-    except (TypeError, ValueError):
-        page = 1
-    try:
-        per_page = int(request.args.get("per_page", 50))
-    except (TypeError, ValueError):
-        per_page = 50
-    per_page = per_page if per_page in {25, 50, 100} else 50
-    all_orders = report["fulfilment"]["orders"]
-    page_count = max(1, (len(all_orders) + per_page - 1) // per_page)
-    page = min(page, page_count)
-    start_index = (page - 1) * per_page
-    return render_template(
-        "order_report.html", active_page="order_report", page_title="Order Report",
-        report=report, selection=selection, available_years=reporting_years(selection["today"]),
-        order_scope=scope, order_comparison=comparison,
-        page=page, page_count=page_count, per_page=per_page,
-        page_orders=all_orders[start_index:start_index + per_page],
-        start_index=start_index, total_filtered_orders=len(all_orders),
-    )
-
-
-@app.route("/shopify/orders.xlsx")
-@permission_required("shopify.view")
-def download_order_report():
-    selection = selected_reporting_period("monthly")
-    scope = request.args.get("scope", "overall").strip()
-    common = {"start_date": selection["start"].isoformat(), "end_date": selection["end"].isoformat()}
-    if scope == "comparison":
-        comparison = {key: order_report(scope=key, **common) for key in ("overall", "crm", "nutritionists")}
-        report = comparison["overall"]
-        workbook = loyalty_comparison_view_excel(comparison, "fulfilment")
-    else:
-        if scope not in {"overall", "crm", "nutritionists"}:
-            scope = "overall"
-        report = order_report(scope=scope, status=request.args.get("status", "").strip(), **common)
-        workbook = loyalty_view_excel(report, "fulfilment")
-    return send_file(
-        workbook, as_attachment=True,
-        download_name=f"order-report-{scope}-{report['start_date']}-to-{report['end_date']}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
 
@@ -1570,8 +1353,6 @@ def update_user():
 def api_status():
     return jsonify({
         "app": "ready",
-        "zoho": connector_status("zoho"),
-        "bik": connector_status("bik"),
         "shopify": connector_status("shopify"),
         "checkedAt": datetime.now(timezone.utc).isoformat(),
         "recentSyncs": recent_sync_runs(5),
@@ -1581,15 +1362,6 @@ def api_status():
 @app.route("/health")
 def health():
     return jsonify({"status": "healthy"})
-
-
-@app.route("/api/metrics")
-@permission_required("dashboard")
-def api_metrics():
-    start, end, preset = selected_range()
-    department_key = request.args.get("department")
-    department_id = ZOHO_DEPARTMENTS.get(department_key, {}).get("id") if department_key else None
-    return jsonify({"range": {"start": start.isoformat(), "end": end.isoformat(), "preset": preset}, "zoho": zoho_metrics(start.isoformat(), end.isoformat(), department_id), "bik": bik_metrics(start.isoformat(), end.isoformat())})
 
 
 @app.route("/auth/microsoft/callback")
@@ -1612,10 +1384,6 @@ def microsoft_callback():
     session["signed_in_at"] = datetime.now(IST).isoformat()
     if access["role"] == "admin" or "dashboard" in permissions:
         return redirect(url_for("dashboard"))
-    if any(key.startswith("zoho.") for key in permissions):
-        return redirect(url_for("zoho"))
-    if any(key.startswith("bik.") for key in permissions):
-        return redirect(url_for("bik"))
     if "shopify.view" in permissions:
         return redirect(url_for("shopify"))
     return redirect(url_for("scorecard"))

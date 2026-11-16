@@ -7,11 +7,17 @@
     <p>Daily, weekly, monthly and yearly employee sales directly from Shopify.</p>
   </div>
   <div class="sync-stamp">
-    <span class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
-      {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at|ist_datetime }}{% else %}Awaiting first sync{% endif %}
+    <span
+      class="status large {{ 'needs_setup' if not report.last_sync or report.last_sync.status != 'success' }}"><i></i>
+      {% if report.last_sync and report.last_sync.completed_at %}Updated {{ report.last_sync.completed_at|ist_datetime
+      }}{% else %}Awaiting first sync{% endif %}
     </span>
-    <a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download Excel</a>
-    <a class="outline-button" href="{{ url_for('sales_dashboard_details', detail='employee', period=period, date=selected_date, month=selected_month, year=selected_year, agent=selected_agent) }}">Underlying data</a>
+    <a class="outline-button export-button"
+      href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download
+      Excel</a>
+    <a class="outline-button"
+      href="{{ url_for('sales_dashboard_details', detail='employee', period=period, date=selected_date, month=selected_month, year=selected_year, agent=selected_agent) }}">Underlying
+      data</a>
   </div>
 </section>
 
@@ -20,87 +26,166 @@
     <span class="toolbar-label">Reporting period</span>
     <div class="report-tabs sales-tabs">
       {% for key, label in [('daily','Daily'),('weekly','Weekly'),('monthly','Monthly'),('yearly','Yearly')] %}
-        <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, agent=selected_agent) }}">{{ label }}</a>
+      <a class="{{ 'active' if period == key }}" href="{{ url_for('shopify', period=key, agent=selected_agent) }}">{{
+        label }}</a>
       {% endfor %}
     </div>
   </div>
   <form method="get" class="sales-period-form">
     <input type="hidden" name="period" value="{{ period }}">
-    <label><span>Employee</span><select name="agent"><option value="">All employees</option>{% for employee in report.available_employees %}<option value="{{ employee.employee_key }}" {{ 'selected' if employee.employee_key == selected_agent }}>{{ employee.display_name }}</option>{% endfor %}</select></label>
+    <label><span>Employee</span><select name="agent">
+        <option value="">All employees</option>{% for employee in report.available_employees %}<option
+          value="{{ employee.employee_key }}" {{ 'selected' if employee.employee_key==selected_agent }}>{{
+          employee.display_name }}</option>{% endfor %}
+      </select></label>
     {% if period == 'daily' %}
-      <label><span>Date</span><input type="date" name="date" value="{{ selected_date }}"></label>
+    <label><span>Date</span><input type="date" name="date" value="{{ selected_date }}"></label>
     {% elif period == 'weekly' %}
-      <label><span>Week ending (Friday)</span><input type="date" name="week_end" value="{{ selected_week_end }}"></label>
+    <label><span>Week ending (Friday)</span><input type="date" name="week_end" value="{{ selected_week_end }}"></label>
     {% elif period == 'monthly' %}
-      <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
+    <label><span>Month</span><input type="month" name="month" value="{{ selected_month }}"></label>
     {% else %}
-      <label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selected_year }}>{{ year }}</option>{% endfor %}</select></label>
+    <label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}"
+          {{ 'selected' if year==selected_year }}>{{ year }}</option>{% endfor %}</select></label>
     {% endif %}
-    <button class="filter-button" type="submit">Apply</button><a class="reset-filter" href="{{ url_for('shopify', period=period) }}">Reset</a>
+    <button class="filter-button" type="submit">Apply</button><a class="reset-filter"
+      href="{{ url_for('shopify', period=period) }}">Reset</a>
   </form>
 </section>
 
 <section class="metric-grid sales-metric-grid" aria-label="Shopify sales summary">
-  <article class="metric-card featured"><div class="metric-top"><span>Selling price</span><span class="trend neutral">Shopify</span></div><strong>{{ report.team.total|inr }}</strong><p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Discount provided</span><span class="metric-symbol amber">−</span></div><strong>{{ report.team.discounts|inr }}</strong><p>Discount on attributed sales</p></article>
-  <article class="metric-card"><div class="metric-top"><span>MRP</span><span class="metric-symbol sage">₹</span></div><strong>{{ report.team.mrp|inr }}</strong><p>Selling price + discount</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{ '{:,}'.format(report.team.orders) }}</strong><p>Orders assigned to configured team members</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Average order value</span><span class="metric-symbol sage">₹</span></div><strong>{{ report.team.average_order_value|inr }}</strong><p>Total sales divided by attributed orders</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Target</span><span class="metric-symbol amber">◎</span></div><strong>{{ report.team.target|inr }}</strong><p>Target for the selected reporting period</p></article>
-  <article class="metric-card"><div class="metric-top"><span>Attainment</span><span class="metric-symbol blue">↗</span></div><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong><p>Managed team sales versus target</p></article>
+  <article class="metric-card featured">
+    <div class="metric-top"><span>Selling price</span><span class="trend neutral">Shopify</span></div><strong>{{
+      report.team.total|inr }}</strong>
+    <p>{{ report.start.strftime('%d %b') }} – {{ report.end.strftime('%d %b %Y') }}</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Discount provided</span><span class="metric-symbol amber">−</span></div><strong>{{
+      report.team.discounts|inr }}</strong>
+    <p>Discount on attributed sales</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>MRP</span><span class="metric-symbol sage">₹</span></div><strong>{{
+      report.team.mrp|inr }}</strong>
+    <p>Selling price + discount</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Attributed orders</span><span class="metric-symbol sage">#</span></div><strong>{{
+      '{:,}'.format(report.team.orders) }}</strong>
+    <p>Orders assigned to configured team members</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Average order value</span><span class="metric-symbol sage">₹</span></div><strong>{{
+      report.team.average_order_value|inr }}</strong>
+    <p>Total sales divided by attributed orders</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Target</span><span class="metric-symbol amber">◎</span></div><strong>{{
+      report.team.target|inr }}</strong>
+    <p>Target for the selected reporting period</p>
+  </article>
+  <article class="metric-card">
+    <div class="metric-top"><span>Attainment</span><span class="metric-symbol blue">↗</span></div><strong>{{
+      (report.team.attainment * 100)|round(1) }}%</strong>
+    <p>Managed team sales versus target</p>
+  </article>
 </section>
 
 {% if period in ['weekly', 'monthly', 'yearly'] and report.growth.points|length > 1 %}
 <section class="panel sales-growth-panel" aria-label="Sales growth trend">
   <div class="panel-head growth-panel-head">
-    <div><span class="eyebrow">GROWTH TREND</span><h2>{{ 'Daily' if period in ['weekly', 'monthly'] else 'Monthly' }} managed-team sales</h2><p class="panel-description">A compact view of movement across the selected {{ 'Saturday–Friday week' if period == 'weekly' else ('month' if period == 'monthly' else 'year') }}.</p></div>
-    {% if report.growth.change is not none %}<span class="growth-change {{ 'positive' if report.growth.change >= 0 else 'negative' }}">{{ '↗' if report.growth.change >= 0 else '↘' }} {{ (report.growth.change|abs * 100)|round(1) }}% vs previous period</span>{% endif %}
+    <div><span class="eyebrow">GROWTH TREND</span>
+      <h2>{{ 'Daily' if period in ['weekly', 'monthly'] else 'Monthly' }} managed-team sales</h2>
+      <p class="panel-description">A compact view of movement across the selected {{ 'Saturday–Friday week' if period ==
+        'weekly' else ('month' if period == 'monthly' else 'year') }}.</p>
+    </div>
+    {% if report.growth.change is not none %}<span
+      class="growth-change {{ 'positive' if report.growth.change >= 0 else 'negative' }}">{{ '↗' if report.growth.change
+      >= 0 else '↘' }} {{ (report.growth.change|abs * 100)|round(1) }}% vs previous period</span>{% endif %}
   </div>
   <div class="growth-chart-shell">
     <div class="growth-plot">
-      <svg class="growth-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Sales growth from {{ report.growth.points[0].label }} to {{ report.growth.points[-1].label }}">
-        <defs><linearGradient id="salesGrowthArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4f9f7b" stop-opacity=".28"/><stop offset="100%" stop-color="#4f9f7b" stop-opacity="0"/></linearGradient></defs>
-        <line x1="4" y1="92" x2="96" y2="92" class="growth-grid-line"/><line x1="4" y1="54" x2="96" y2="54" class="growth-grid-line"/><line x1="4" y1="16" x2="96" y2="16" class="growth-grid-line"/>
-        <polygon points="4,92 {{ report.growth.polyline }} 96,92" fill="url(#salesGrowthArea)"/>
-        <polyline points="{{ report.growth.polyline }}" class="growth-line"/>
+      <svg class="growth-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
+        aria-label="Sales growth from {{ report.growth.points[0].label }} to {{ report.growth.points[-1].label }}">
+        <defs>
+          <linearGradient id="salesGrowthArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#4f9f7b" stop-opacity=".28" />
+            <stop offset="100%" stop-color="#4f9f7b" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1="4" y1="92" x2="96" y2="92" class="growth-grid-line" />
+        <line x1="4" y1="54" x2="96" y2="54" class="growth-grid-line" />
+        <line x1="4" y1="16" x2="96" y2="16" class="growth-grid-line" />
+        <polygon points="4,92 {{ report.growth.polyline }} 96,92" fill="url(#salesGrowthArea)" />
+        <polyline points="{{ report.growth.polyline }}" class="growth-line" />
       </svg>
       {% for point in report.growth.points %}
-      <button type="button" class="growth-point" style="--point-x:{{ point.x }}%;--point-y:{{ point.y }}%" aria-label="{{ point.label }} sales {{ point.value|inr }}">
-        <span class="growth-tooltip"><b>{{ point.label }}</b><strong>{{ point.value|inr }}</strong>{% if point.change is not none %}<small class="{{ 'positive' if point.change >= 0 else 'negative' }}">{{ '▲' if point.change >= 0 else '▼' }} {{ (point.change|abs * 100)|round(1) }}% vs prior</small>{% endif %}</span>
+      <button type="button" class="growth-point" style="--point-x:{{ point.x }}%;--point-y:{{ point.y }}%"
+        aria-label="{{ point.label }} sales {{ point.value|inr }}">
+        <span class="growth-tooltip"><b>{{ point.label }}</b><strong>{{ point.value|inr }}</strong>{% if point.change is
+          not none %}<small class="{{ 'positive' if point.change >= 0 else 'negative' }}">{{ '▲' if point.change >= 0
+            else '▼' }} {{ (point.change|abs * 100)|round(1) }}% vs prior</small>{% endif %}</span>
       </button>
       {% endfor %}
     </div>
     <div class="growth-axis">{% for point in report.growth.points %}<span>{{ point.label }}</span>{% endfor %}</div>
   </div>
-  <div class="growth-summary"><span>Previous <strong>{{ report.growth.previous|inr }}</strong></span><span>Latest <strong>{{ report.growth.current|inr }}</strong></span></div>
+  <div class="growth-summary"><span>Previous <strong>{{ report.growth.previous|inr }}</strong></span><span>Latest
+      <strong>{{ report.growth.current|inr }}</strong></span></div>
 </section>
 {% endif %}
 
 <section class="panel sales-report-panel">
   <div class="panel-head">
-    <div><span class="eyebrow">{{ 'WEEK END REPORT' if period == 'weekly' else period|upper ~ ' REPORT' }}</span><h2>{{ 'Saturday–Friday sales summary' if period == 'weekly' else 'Sales performance by employee' }}</h2></div>
-    {% if period == 'weekly' %}<span class="count-badge">Saturday–Friday · Week ending</span>{% elif period == 'yearly' %}<span class="count-badge">Month-by-month</span>{% endif %}
+    <div><span class="eyebrow">{{ 'WEEK END REPORT' if period == 'weekly' else period|upper ~ ' REPORT' }}</span>
+      <h2>{{ 'Saturday–Friday sales summary' if period == 'weekly' else 'Sales performance by employee' }}</h2>
+    </div>
+    {% if period == 'weekly' %}<span class="count-badge">Saturday–Friday · Week ending</span>{% elif period == 'yearly'
+    %}<span class="count-badge">Month-by-month</span>{% endif %}
   </div>
   <div class="table-wrap sales-matrix-wrap">
     <table class="sales-matrix">
-      <thead><tr>
-        <th>Employee</th><th>Role</th>
-        {% for column in report.columns %}<th>{{ column.label }}</th>{% endfor %}
-        <th>MRP</th><th>Discount</th><th>Selling price</th><th>Orders</th><th>Average order value</th><th>Attainment</th>
-      </tr></thead>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Role</th>
+          {% for column in report.columns %}<th>{{ column.label }}</th>{% endfor %}
+          <th>MRP</th>
+          <th>Discount</th>
+          <th>Selling price</th>
+          <th>Orders</th>
+          <th>Average order value</th>
+          <th>Attainment</th>
+        </tr>
+      </thead>
       <tbody>
         {% if not report.selected_employee %}<tr class="team-total-row">
-          <td><strong>CRM Team</strong></td><td>Managed team</td>
-          {% for value in report.team['values'] %}<td><strong>{{ value|inr }}</strong><small>Target {{ report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}
-          <td><strong>{{ report.team.mrp|inr }}</strong></td><td>{{ report.team.discounts|inr }}</td><td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td><td><strong>{{ report.team.orders }}</strong></td><td><strong>{{ report.team.average_order_value|inr }}</strong></td><td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
+          <td><strong>CRM Team</strong></td>
+          <td>Managed team</td>
+          {% for value in report.team['values'] %}<td><strong>{{ value|inr }}</strong><small>Target {{
+              report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}
+          <td><strong>{{ report.team.mrp|inr }}</strong></td>
+          <td>{{ report.team.discounts|inr }}</td>
+          <td><strong>{{ report.team.total|inr }}</strong><small>Target {{ report.team.target|inr }}</small></td>
+          <td><strong>{{ report.team.orders }}</strong></td>
+          <td><strong>{{ report.team.average_order_value|inr }}</strong></td>
+          <td><strong>{{ (report.team.attainment * 100)|round(1) }}%</strong></td>
         </tr>{% endif %}
         {% for employee in report.rows if employee.include_in_team %}
-        <tr class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
+        <tr
+          class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
           <td><strong>{{ employee.display_name }}</strong></td>
           <td>{{ employee.role }}</td>
-          {% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span></td>{% endfor %}
-          <td><strong>{{ (employee.total + employee.discounts|abs)|inr }}</strong></td><td>{{ employee.discounts|abs|inr }}</td><td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td><td>{{ employee.orders }}</td><td>{{ employee.average_order_value|inr }}</td>
-          <td>{% if employee.attainment is not none %}<span class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{ (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
+          {% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—'
+              }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span></td>{% endfor %}
+          <td><strong>{{ (employee.total + employee.discounts|abs)|inr }}</strong></td>
+          <td>{{ employee.discounts|abs|inr }}</td>
+          <td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td>
+          <td>{{ employee.orders }}</td>
+          <td>{{ employee.average_order_value|inr }}</td>
+          <td>{% if employee.attainment is not none %}<span
+              class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{
+              (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
@@ -112,35 +197,93 @@
 {% if week_end_report.growth.points|length > 1 %}
 <section class="panel sales-growth-panel week-end-growth-panel" aria-label="Week End sales growth trend">
   <div class="panel-head growth-panel-head">
-    <div><span class="eyebrow">WEEK END GROWTH</span><h2>Week-ending managed-team sales</h2><p class="panel-description">Saturday–Friday performance across the selected {{ 'year' if period == 'yearly' else 'month' }}.</p></div>
-    {% if week_end_report.growth.change is not none %}<span class="growth-change {{ 'positive' if week_end_report.growth.change >= 0 else 'negative' }}">{{ '↗' if week_end_report.growth.change >= 0 else '↘' }} {{ (week_end_report.growth.change|abs * 100)|round(1) }}% vs previous week</span>{% endif %}
+    <div><span class="eyebrow">WEEK END GROWTH</span>
+      <h2>Week-ending managed-team sales</h2>
+      <p class="panel-description">Saturday–Friday performance across the selected {{ 'year' if period == 'yearly' else
+        'month' }}.</p>
+    </div>
+    {% if week_end_report.growth.change is not none %}<span
+      class="growth-change {{ 'positive' if week_end_report.growth.change >= 0 else 'negative' }}">{{ '↗' if
+      week_end_report.growth.change >= 0 else '↘' }} {{ (week_end_report.growth.change|abs * 100)|round(1) }}% vs
+      previous week</span>{% endif %}
   </div>
   <div class="growth-chart-shell">
     <div class="growth-plot">
-      <svg class="growth-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="Week End sales growth from {{ week_end_report.growth.points[0].label }} to {{ week_end_report.growth.points[-1].label }}">
-        <defs><linearGradient id="weekEndGrowthArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#c5df63" stop-opacity=".32"/><stop offset="100%" stop-color="#4f9f7b" stop-opacity="0"/></linearGradient></defs>
-        <line x1="4" y1="92" x2="96" y2="92" class="growth-grid-line"/><line x1="4" y1="54" x2="96" y2="54" class="growth-grid-line"/><line x1="4" y1="16" x2="96" y2="16" class="growth-grid-line"/>
-        <polygon points="4,92 {{ week_end_report.growth.polyline }} 96,92" fill="url(#weekEndGrowthArea)"/>
-        <polyline points="{{ week_end_report.growth.polyline }}" class="growth-line"/>
+      <svg class="growth-chart" viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
+        aria-label="Week End sales growth from {{ week_end_report.growth.points[0].label }} to {{ week_end_report.growth.points[-1].label }}">
+        <defs>
+          <linearGradient id="weekEndGrowthArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#c5df63" stop-opacity=".32" />
+            <stop offset="100%" stop-color="#4f9f7b" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <line x1="4" y1="92" x2="96" y2="92" class="growth-grid-line" />
+        <line x1="4" y1="54" x2="96" y2="54" class="growth-grid-line" />
+        <line x1="4" y1="16" x2="96" y2="16" class="growth-grid-line" />
+        <polygon points="4,92 {{ week_end_report.growth.polyline }} 96,92" fill="url(#weekEndGrowthArea)" />
+        <polyline points="{{ week_end_report.growth.polyline }}" class="growth-line" />
       </svg>
-      {% for point in week_end_report.growth.points %}<button type="button" class="growth-point" style="--point-x:{{ point.x }}%;--point-y:{{ point.y }}%" aria-label="{{ point.label }} sales {{ point.value|inr }}"><span class="growth-tooltip"><b>{{ point.label }}</b><strong>{{ point.value|inr }}</strong>{% if point.change is not none %}<small class="{{ 'positive' if point.change >= 0 else 'negative' }}">{{ '▲' if point.change >= 0 else '▼' }} {{ (point.change|abs * 100)|round(1) }}% vs prior week</small>{% endif %}</span></button>{% endfor %}
+      {% for point in week_end_report.growth.points %}<button type="button" class="growth-point"
+        style="--point-x:{{ point.x }}%;--point-y:{{ point.y }}%"
+        aria-label="{{ point.label }} sales {{ point.value|inr }}"><span class="growth-tooltip"><b>{{ point.label
+            }}</b><strong>{{ point.value|inr }}</strong>{% if point.change is not none %}<small
+            class="{{ 'positive' if point.change >= 0 else 'negative' }}">{{ '▲' if point.change >= 0 else '▼' }} {{
+            (point.change|abs * 100)|round(1) }}% vs prior week</small>{% endif %}</span></button>{% endfor %}
     </div>
-    <div class="growth-axis">{% for point in week_end_report.growth.points %}<span>{{ point.label }}</span>{% endfor %}</div>
+    <div class="growth-axis">{% for point in week_end_report.growth.points %}<span>{{ point.label }}</span>{% endfor %}
+    </div>
   </div>
-  <div class="growth-summary"><span>Previous <strong>{{ week_end_report.growth.previous|inr }}</strong></span><span>Latest <strong>{{ week_end_report.growth.current|inr }}</strong></span></div>
+  <div class="growth-summary"><span>Previous <strong>{{ week_end_report.growth.previous|inr
+        }}</strong></span><span>Latest <strong>{{ week_end_report.growth.current|inr }}</strong></span></div>
 </section>
 {% endif %}
 <section class="panel sales-report-panel week-end-report-panel">
   <div class="panel-head">
-    <div><span class="eyebrow">WEEK END REPORT</span><h2>Saturday–Friday sales summary</h2><p class="panel-description">Each column contains one complete business week, labelled by its Friday ending date.</p></div>
-    <div class="panel-actions"><span class="count-badge">{{ week_end_report.columns|length }} week{{ '' if week_end_report.columns|length == 1 else 's' }}</span><a class="outline-button export-button" href="{{ url_for('download_shopify_week_end', period=period, month=selected_month, year=selected_year, agent=selected_agent) }}">Download Week End Excel</a></div>
+    <div><span class="eyebrow">WEEK END REPORT</span>
+      <h2>Saturday–Friday sales summary</h2>
+      <p class="panel-description">Each column contains one complete business week, labelled by its Friday ending date.
+      </p>
+    </div>
+    <div class="panel-actions"><span class="count-badge">{{ week_end_report.columns|length }} week{{ '' if
+        week_end_report.columns|length == 1 else 's' }}</span><a class="outline-button export-button"
+        href="{{ url_for('download_shopify_week_end', period=period, month=selected_month, year=selected_year, agent=selected_agent) }}">Download
+        Week End Excel</a></div>
   </div>
   <div class="table-wrap sales-matrix-wrap week-end-matrix-wrap">
     <table class="sales-matrix">
-      <thead><tr><th>Employee</th><th>Role</th>{% for column in week_end_report.columns %}<th>{{ column.label }}</th>{% endfor %}<th>Total</th><th>Orders</th><th>Average order value</th><th>Attainment</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Role</th>{% for column in week_end_report.columns %}<th>{{ column.label }}</th>{% endfor %}<th>Total</th>
+          <th>Orders</th>
+          <th>Average order value</th>
+          <th>Attainment</th>
+        </tr>
+      </thead>
       <tbody>
-        {% if not week_end_report.selected_employee %}<tr class="team-total-row"><td><strong>CRM Team</strong></td><td>Managed team</td>{% for value in week_end_report.team['values'] %}<td><strong>{{ value|inr }}</strong><small>Target {{ week_end_report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}<td><strong>{{ week_end_report.team.total|inr }}</strong><small>Target {{ week_end_report.team.target|inr }}</small></td><td><strong>{{ week_end_report.team.orders }}</strong></td><td><strong>{{ week_end_report.team.average_order_value|inr }}</strong></td><td><strong>{{ (week_end_report.team.attainment * 100)|round(1) }}%</strong></td></tr>{% endif %}
-        {% for employee in week_end_report.rows if employee.include_in_team %}<tr class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}"><td><strong>{{ employee.display_name }}</strong></td><td>{{ employee.role }}</td>{% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span></td>{% endfor %}<td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr }}</small></td><td>{{ employee.orders }}</td><td>{{ employee.average_order_value|inr }}</td><td>{% if employee.attainment is not none %}<span class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{ (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td></tr>{% endfor %}
+        {% if not week_end_report.selected_employee %}<tr class="team-total-row">
+          <td><strong>CRM Team</strong></td>
+          <td>Managed team</td>{% for value in week_end_report.team['values'] %}<td><strong>{{ value|inr
+              }}</strong><small>Target {{ week_end_report.team['targets'][loop.index0]|inr }}</small></td>{% endfor %}
+          <td><strong>{{ week_end_report.team.total|inr }}</strong><small>Target {{ week_end_report.team.target|inr
+              }}</small></td>
+          <td><strong>{{ week_end_report.team.orders }}</strong></td>
+          <td><strong>{{ week_end_report.team.average_order_value|inr }}</strong></td>
+          <td><strong>{{ (week_end_report.team.attainment * 100)|round(1) }}%</strong></td>
+        </tr>{% endif %}
+        {% for employee in week_end_report.rows if employee.include_in_team %}<tr
+          class="{{ 'top-performer' if employee.performance_band == 'top' else ('bottom-performer' if employee.performance_band == 'bottom' else '') }}">
+          <td><strong>{{ employee.display_name }}</strong></td>
+          <td>{{ employee.role }}</td>{% for value in employee['values'] %}<td><span class="sales-value">{{ value|inr if
+              value else '—' }}</span><span class="cell-target">Target {{ employee.targets[loop.index0]|inr }}</span>
+          </td>{% endfor %}<td><strong>{{ employee.total|inr }}</strong><small>Target {{ employee.total_target|inr
+              }}</small></td>
+          <td>{{ employee.orders }}</td>
+          <td>{{ employee.average_order_value|inr }}</td>
+          <td>{% if employee.attainment is not none %}<span
+              class="attainment-pill {{ 'good' if employee.attainment >= 1 else ('mid' if employee.attainment >= 0.7 else 'low') }}">{{
+              (employee.attainment * 100)|round(1) }}%</span>{% else %}—{% endif %}</td>
+        </tr>{% endfor %}
       </tbody>
     </table>
   </div>
@@ -148,13 +291,94 @@
 {% endif %}
 
 {% if period in ['monthly', 'yearly'] %}<section class="panel sales-report-panel team-product-sales-panel">
-  <div class="panel-head"><div><span class="eyebrow">CRM TEAM · PRODUCT PERFORMANCE</span><h2>CRM Team sales by product</h2><p class="panel-description">Products ranked by quantity sold. Nutritionist-team sales are excluded.</p></div><a class="outline-button export-button" href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download Excel</a></div>
-  <div class="table-wrap product-table-scroll"><table><thead><tr><th>Rank</th><th>Product</th><th>SKU</th><th>Quantity sold</th><th>MRP</th><th>Discount</th><th>Selling price</th><th>Orders</th></tr></thead><tbody>{% for item in report.team_product_rows %}<tr><td><strong>{{ loop.index }}</strong></td><td><strong>{{ item.product_title }}</strong></td><td>{{ item.product_sku or '—' }}</td><td><strong>{{ '{:,}'.format(item.quantity) }}</strong></td><td>{{ item.mrp|inr }}</td><td>{{ item.discounts|inr }}</td><td>{{ item.total|inr }}</td><td>{{ item.orders }}</td></tr>{% else %}<tr><td colspan="8" class="empty-state">Product totals will appear after the next Shopify refresh.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="panel-head">
+    <div><span class="eyebrow">CRM TEAM · PRODUCT PERFORMANCE</span>
+      <h2>CRM Team sales by product</h2>
+      <p class="panel-description">Products ranked by quantity sold. Nutritionist-team sales are excluded.</p>
+    </div><a class="outline-button export-button"
+      href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download
+      Excel</a>
+  </div>
+  <div class="table-wrap product-table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Rank</th>
+          <th>Product</th>
+          <th>SKU</th>
+          <th>Quantity sold</th>
+          <th>MRP</th>
+          <th>Discount</th>
+          <th>Selling price</th>
+          <th>Orders</th>
+        </tr>
+      </thead>
+      <tbody>{% for item in report.team_product_rows %}<tr>
+          <td><strong>{{ loop.index }}</strong></td>
+          <td><strong>{{ item.product_title }}</strong></td>
+          <td>{{ item.product_sku or '—' }}</td>
+          <td><strong>{{ '{:,}'.format(item.quantity) }}</strong></td>
+          <td>{{ item.mrp|inr }}</td>
+          <td>{{ item.discounts|inr }}</td>
+          <td>{{ item.total|inr }}</td>
+          <td>{{ item.orders }}</td>
+        </tr>{% else %}<tr>
+          <td colspan="8" class="empty-state">Product totals will appear after the next Shopify refresh.</td>
+        </tr>{% endfor %}</tbody>
+    </table>
+  </div>
 </section>
 <section class="panel sales-report-panel product-sales-panel">
-  <div class="panel-head"><div><span class="eyebrow">PRODUCT × EMPLOYEE</span><h2>Product-level sales per person</h2></div><div class="panel-actions"><span class="count-badge" data-product-count>{{ report.product_rows|length }} combinations</span><a class="outline-button export-button" data-product-export href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download filtered Excel</a></div></div>
-  <div class="product-filter" data-product-filter><label><span>Search in</span><select data-product-field><option value="all">All columns</option><option value="employee">Employee</option><option value="role">Role</option><option value="product">Product</option><option value="sku">SKU</option></select></label><label class="product-search"><span>Search</span><input type="search" data-product-query placeholder="Type to filter records…" autocomplete="off"></label><button class="outline-button" type="button" data-product-clear>Clear</button></div>
-  <div class="table-wrap product-table-scroll"><table><thead><tr><th>Employee</th><th>Role</th><th>Product</th><th>SKU</th><th>MRP</th><th>Discount</th><th>Selling price</th><th>Orders</th><th>Average order value</th></tr></thead><tbody>{% for item in report.product_rows %}<tr data-product-row data-employee="{{ item.display_name|lower }}" data-role="{{ item.role|lower }}" data-product="{{ item.product_title|lower }}" data-sku="{{ (item.product_sku or '')|lower }}"><td><strong>{{ item.display_name }}</strong></td><td>{{ item.role }}</td><td>{{ item.product_title }}</td><td>{{ item.product_sku or '—' }}</td><td>{{ item.mrp|inr }}</td><td>{{ item.discounts|inr }}</td><td><strong>{{ item.total|inr }}</strong></td><td>{{ item.orders }}</td><td>{{ item.average_order_value|inr }}</td></tr>{% else %}<tr><td colspan="9" class="empty-state">Product-level data will appear after the next Shopify refresh.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="panel-head">
+    <div><span class="eyebrow">PRODUCT × EMPLOYEE</span>
+      <h2>Product-level sales per person</h2>
+    </div>
+    <div class="panel-actions"><span class="count-badge" data-product-count>{{ report.product_rows|length }}
+        combinations</span><a class="outline-button export-button" data-product-export
+        href="{{ url_for('download_shopify_performance', period=period, date=selected_date, week_end=selected_week_end, month=selected_month, year=selected_year, agent=selected_agent) }}">Download
+        filtered Excel</a></div>
+  </div>
+  <div class="product-filter" data-product-filter><label><span>Search in</span><select data-product-field>
+        <option value="all">All columns</option>
+        <option value="employee">Employee</option>
+        <option value="role">Role</option>
+        <option value="product">Product</option>
+        <option value="sku">SKU</option>
+      </select></label><label class="product-search"><span>Search</span><input type="search" data-product-query
+        placeholder="Type to filter records…" autocomplete="off"></label><button class="outline-button" type="button"
+      data-product-clear>Clear</button></div>
+  <div class="table-wrap product-table-scroll">
+    <table>
+      <thead>
+        <tr>
+          <th>Employee</th>
+          <th>Role</th>
+          <th>Product</th>
+          <th>SKU</th>
+          <th>MRP</th>
+          <th>Discount</th>
+          <th>Selling price</th>
+          <th>Orders</th>
+          <th>Average order value</th>
+        </tr>
+      </thead>
+      <tbody>{% for item in report.product_rows %}<tr data-product-row data-employee="{{ item.display_name|lower }}"
+          data-role="{{ item.role|lower }}" data-product="{{ item.product_title|lower }}"
+          data-sku="{{ (item.product_sku or '')|lower }}">
+          <td><strong>{{ item.display_name }}</strong></td>
+          <td>{{ item.role }}</td>
+          <td>{{ item.product_title }}</td>
+          <td>{{ item.product_sku or '—' }}</td>
+          <td>{{ item.mrp|inr }}</td>
+          <td>{{ item.discounts|inr }}</td>
+          <td><strong>{{ item.total|inr }}</strong></td>
+          <td>{{ item.orders }}</td>
+          <td>{{ item.average_order_value|inr }}</td>
+        </tr>{% else %}<tr>
+          <td colspan="9" class="empty-state">Product-level data will appear after the next Shopify refresh.</td>
+        </tr>{% endfor %}</tbody>
+    </table>
+  </div>
 </section>
 {% endif %}
 

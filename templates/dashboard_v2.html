@@ -2,10 +2,9 @@
 {% block content %}
 <section class="page-heading sales-dashboard-heading">
   <div><span class="eyebrow">SALES INTELLIGENCE</span><h1>Sales Dashboard</h1><p>Shopify employee performance, targets and attainment.</p></div>
-  <div class="heading-actions"><div class="sync-control"><button class="primary-button sync-all-button" type="button" data-sync-all data-csrf="{{ csrf_token() }}">Refresh All Data</button><small data-sync-message>Zoho, BIK and Shopify · IST status above</small></div></div>
+  <div class="heading-actions"><div class="sync-control"><button class="primary-button sync-all-button" type="button" data-sync-all data-csrf="{{ csrf_token() }}">Refresh All Data</button><small data-sync-message>Shopify · IST status above</small></div></div>
 </section>
 <section class="dashboard-control-row panel">
-  <div class="report-tabs dashboard-view-tabs"><a class="active" href="{{ url_for('dashboard') }}">Sales Dashboard</a></div>
   <form class="dashboard-period-form" method="get"><label><span>View</span><select name="period" onchange="this.form.submit()">{% for key,label in [('daily','Date'),('weekly','Week'),('monthly','Month'),('yearly','Year')] %}<option value="{{ key }}" {{ 'selected' if selection.period == key }}>{{ label }}</option>{% endfor %}</select></label>{% if selection.period == 'daily' %}<label><span>Date</span><input type="date" name="date" value="{{ selection.date }}"></label>{% elif selection.period == 'weekly' %}<label><span>Week ending</span><input type="date" name="week_end" value="{{ selection.week_end }}"></label>{% elif selection.period == 'monthly' %}<label><span>Month</span><input type="month" name="month" value="{{ selection.month }}"></label>{% else %}<label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selection.year }}>{{ year }}</option>{% endfor %}</select></label>{% endif %}<button class="filter-button" type="submit">Apply</button><a class="reset-filter" href="{{ url_for('dashboard') }}">Reset all filters</a></form>
 </section>
 {% if sales_scope == 'comparison' %}{% include '_sales_comparison.html' %}{% else %}

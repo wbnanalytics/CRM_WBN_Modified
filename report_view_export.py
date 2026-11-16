@@ -104,9 +104,6 @@ def comparison_view_excel(comparison, view, report_type, products=None):
 
 def loyalty_comparison_view_excel(comparison, view):
     labels = {"overall": "Wellbeing Overall", "crm": "Team CRM", "nutritionists": "Team Nutritionists"}
-    if view == "fulfilment":
-        rows = [[labels[k], comparison[k]["fulfilment"]["reconciliation"]["shopify_orders"]] + [comparison[k]["fulfilment"]["summary"][b] for b in comparison[k]["fulfilment_buckets"]] + [comparison[k]["fulfilment"]["reconciliation"]["matched_orders"], comparison[k]["fulfilment"]["reconciliation"]["shopify_missing_uniware"]] for k in labels]
-        return _workbook("Order Report Comparison", ["Scope", "Total Shopify Orders", "Delivered", "Cancelled", "Returned", "Pending", "Reconciled Orders", "Awaiting Uniware Sync / Match"], rows, (), (), (2, 3, 4, 5, 6, 7, 8))
     if view == "tiers":
         rows = [[labels[k]] + [comparison[k]["tier_counts"][tier] for tier in comparison[k]["tiers"]] + [comparison[k]["customer_count"]] for k in labels]
         return _workbook("Customer Loyalty Tier Comparison", ["Scope", "Loyal", "Regular", "Repeat", "One-time", "Total Customers"], rows, (), (), (2, 3, 4, 5, 6))
@@ -130,8 +127,5 @@ def underlying_view_excel(detail, order_rows, product_rows):
 
 
 def loyalty_view_excel(report, view):
-    if view == "fulfilment":
-        rows = [[r["display_order_code"], r["sale_order_code"], r["display_order_date"], r["fulfilment_bucket"], r["order_status"], r["customer_name"], r["customer_email"], r["customer_phone"], "Yes" if r["cod"] else "No", r["item_count"]] for r in report["fulfilment"]["orders"]]
-        return _workbook(f"{report['scope_label']} — Uniware Order Detail", ["Display Order", "Uniware Order", "Date", "Status", "Raw Status", "Customer", "Email", "Phone", "COD", "Items"], rows, (), (), (10,))
     rows = [[r["customer_name"], r["customer_email"], r["customer_phone"], r["tier"], r["order_count"], r["first_order_month"], r["last_order_month"], ", ".join(r.get("agents") or []), r["matched_by"]] for r in report["customers"]]
     return _workbook(f"{report['scope_label']} — Customer Loyalty Directory", ["Customer", "Email", "Phone", "Tier", "Orders", "First Order", "Last Order", "Agents", "Identity Evidence"], rows, (), (), (5,))

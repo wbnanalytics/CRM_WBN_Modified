@@ -14,11 +14,11 @@
   <link
     href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&amp;family=Manrope:wght@600;700;800&amp;display=swap"
     rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css', v='20261113-1') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='dashboard.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='shopify.css', v='20260826-9') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='admin.css') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20260826-9') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='portal-polish.css', v='20261113-2') }}">
   <script src="{{ url_for('static', filename='app.js', v='20260826-9') }}" defer></script>
 </head>
 
@@ -32,24 +32,34 @@
         {% if can_access('dashboard') %}<a class="nav-item {{ 'active' if active_page == 'dashboard' }}"
           href="{{ url_for('dashboard') }}"><span class="nav-glyph">⌂</span>Dashboard</a>{% endif %}
         {% if can_access('shopify.view') %}<span class="nav-label section-label">SALES REPORTING</span>
-        <a class="nav-item {{ 'active' if active_page == 'order_report' }}"
-          href="{{ url_for('order_report_view') }}"><span class="nav-glyph boxed">O</span>Order Report</a>
-
         <a class="nav-item {{ 'active' if active_page == 'product_report' }}"
-          href="{{ url_for('product_report') }}"><span class="nav-glyph boxed">P</span>Product Report</a>
-
-        <a class="nav-item {{ 'active' if active_page == 'shopify' }}" href="{{ url_for('shopify') }}"><span
-            class="nav-glyph boxed">S</span>Shopify Sales</a>{% endif %}
+          href="{{ url_for('product_report') }}"><span class="nav-glyph boxed">P</span>Product Report</a>{% endif %}
         {% if is_admin %}<span class="nav-label section-label">ADMINISTRATION</span>
         <a class="nav-item {{ 'active' if active_page == 'users' }}" href="{{ url_for('manage_users') }}"><span
             class="nav-glyph boxed">U</span>User Management</a>{% endif %}
       </nav>
       <div class="sidebar-foot">
-        <div class="user-avatar">CS</div>
-        <div><strong>{{ session.get('user', {}).get('name', 'CS Team') }}</strong><span>{{ 'Super Admin' if
-            is_super_admin else session.get('user', {}).get('role', 'User')|title }} · {{ session.get('user',
-            {}).get('email', 'Internal workspace') }}</span></div>
-        <a class="logout-link" href="{{ url_for('logout') }}">Logout</a>
+        <div class="user-profile">
+          <div class="user-avatar">{{ (session.get('user', {}).get('name') or 'WN')[:2]|upper }}</div>
+          <div class="user-info">
+            <div class="user-name-row">
+              <strong class="user-name" title="{{ session.get('user', {}).get('name', 'User') }}">{{ session.get('user',
+                {}).get('name', 'User') }}</strong>
+              {% if is_super_admin %}<span class="user-badge">Admin</span>{% endif %}
+            </div>
+            <span class="user-email" title="{{ session.get('user', {}).get('email', '') }}">{{ session.get('user',
+              {}).get('email', '') }}</span>
+          </div>
+        </div>
+        <a class="logout-link" href="{{ url_for('logout') }}" title="Sign out of CRM">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span>Logout</span>
+        </a>
       </div>
     </aside>
     <main class="main-content">

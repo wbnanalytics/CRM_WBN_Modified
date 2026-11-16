@@ -305,38 +305,3 @@ def sales_management(report, scope="overall"):
         "discount_rate": abs(all_discount_signed) / eligible_gross_sales * 100 if eligible_gross_sales else 0,
         "unassigned_sales": groups["Other / Unassigned"]["sales"],
     }
-
-
-def cs_management(report):
-    targets = {
-        "email": {"frt": 4 * 3600, "art": 4 * 3600, "resolution": 48 * 3600},
-        "inbound": {},
-        "chats": {"frt": 30, "art": 2 * 3600, "resolution": 48 * 3600},
-        "orm": {"frt": 30, "art": 4 * 3600, "resolution": 48 * 3600},
-    }
-    channels = []
-    for item in report.get("metrics", []):
-        clean_total = max(0, item.get("total", 0) - item.get("spam", 0))
-        channel_targets = targets[item["key"]]
-        frt = item.get("frt_without_spam")
-        art = item.get("art_without_spam")
-        channels.append({
-            **item,
-            "clean_total": clean_total,
-            "open_rate": item.get("open", 0) / clean_total * 100 if clean_total else 0,
-            "frt_target": channel_targets.get("frt"),
-            "art_target": channel_targets.get("art"),
-            "frt_met": frt is not None and channel_targets.get("frt") is not None and frt <= channel_targets["frt"],
-            "art_met": art is not None and channel_targets.get("art") is not None and art <= channel_targets["art"],
-            "source_note": "Zoho ticket cohort" if item["source"] == "Zoho Desk" else "BIK ticket export",
-        })
-    attention = sorted(channels, key=lambda row: (-row["open"], row["label"]))
-    return {
-        "channels": channels,
-        "attention": attention,
-        "total": report.get("total", 0),
-        "resolved": report.get("resolved", 0),
-        "spam": report.get("spam", 0),
-        "open": sum(item.get("open", 0) for item in channels),
-        "clean_total": sum(item.get("clean_total", 0) for item in channels),
-    }

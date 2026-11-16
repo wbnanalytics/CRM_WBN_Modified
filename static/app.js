@@ -67,14 +67,14 @@ if (syncButton) {
           pollTimer = setTimeout(() => pollSync(showFailure), 15000);
           return;
         }
-        setSyncState(data.status, data.status === "queued" ? "Refresh queued…" : "Refreshing Zoho, BIK, Shopify and Uniware…");
+        setSyncState(data.status, data.status === "queued" ? "Refresh queued…" : "Refreshing Shopify data…");
         pollTimer = setTimeout(() => pollSync(showFailure), 3000);
       } else if (data.status === "success") {
         setSyncState(data.status, "All data refreshed successfully");
       } else if (data.status === "failed") {
         setSyncState(data.status, showFailure ? "Refresh finished with an error — please retry" : "Manual refresh available");
       } else {
-        setSyncState(data.status, "Zoho, BIK, Shopify and Uniware");
+        setSyncState(data.status, "Shopify");
       }
     } catch (_) {
       setSyncState("failed", "Unable to check refresh status");

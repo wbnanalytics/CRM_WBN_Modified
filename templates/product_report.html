@@ -6,14 +6,14 @@
   <div class="heading-actions"><span class="read-only-badge">Shopify read-only report</span></div>
 </section>
 <section class="dashboard-control-row panel">
-  <nav class="sales-scope-tabs product-scope-tabs" aria-label="Product report scope">
-    <a class="{{ 'active' if product_scope == 'overall' }}" href="{{ url_for('product_report', scope='overall', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Wellbeing Overall</a>
-    <a class="{{ 'active' if product_scope == 'crm' }}" href="{{ url_for('product_report', scope='crm', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Team CRM</a>
-    <a class="{{ 'active' if product_scope == 'nutritionists' }}" href="{{ url_for('product_report', scope='nutritionists', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Team Nutritionists</a>
-    <a class="{{ 'active' if product_scope == 'comparison' }}" href="{{ url_for('product_report', scope='comparison', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Comparison</a>
-  </nav>
   <form class="dashboard-period-form" method="get"><input type="hidden" name="scope" value="{{ product_scope }}"><label><span>View</span><select name="period" onchange="this.form.submit()">{% for key,label in [('daily','Date'),('weekly','Week ending'),('monthly','Month'),('yearly','Year')] %}<option value="{{ key }}" {{ 'selected' if selection.period == key }}>{{ label }}</option>{% endfor %}</select></label>{% if selection.period == 'daily' %}<label><span>Date</span><input type="date" name="date" value="{{ selection.date }}"></label>{% elif selection.period == 'weekly' %}<label><span>Week ending</span><input type="date" name="week_end" value="{{ selection.week_end }}"></label>{% elif selection.period == 'monthly' %}<label><span>Month</span><input type="month" name="month" value="{{ selection.month }}"></label>{% else %}<label><span>Year</span><select name="year">{% for year in available_years %}<option value="{{ year }}" {{ 'selected' if year == selection.year }}>{{ year }}</option>{% endfor %}</select></label>{% endif %}<button class="filter-button" type="submit">Apply</button><a class="reset-filter" href="{{ url_for('product_report', scope=product_scope) }}">Reset</a></form>
 </section>
+<nav class="sales-scope-tabs product-scope-tabs" aria-label="Product report scope">
+  <a class="{{ 'active' if product_scope == 'overall' }}" href="{{ url_for('product_report', scope='overall', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Wellbeing Overall</a>
+  <a class="{{ 'active' if product_scope == 'crm' }}" href="{{ url_for('product_report', scope='crm', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Team CRM</a>
+  <a class="{{ 'active' if product_scope == 'nutritionists' }}" href="{{ url_for('product_report', scope='nutritionists', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Team Nutritionists</a>
+  <a class="{{ 'active' if product_scope == 'comparison' }}" href="{{ url_for('product_report', scope='comparison', period=selection.period, date=selection.date, week_end=selection.week_end, month=selection.month, year=selection.year) }}">Comparison</a>
+</nav>
 {% if product_scope == 'comparison' %}
 {% include '_product_comparison.html' %}
 {% else %}

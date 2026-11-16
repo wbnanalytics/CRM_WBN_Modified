@@ -17,18 +17,21 @@ from shopify_service import _employee_identity, sales_report
 
 IST = ZoneInfo("Asia/Kolkata")
 ALWAYS_TO = [
-    "soumik@wellbeingnutrition.com",
-    "khushbu.nishad@wellbeingnutrition.com",
-    "ashutosh@wellbeingnutrition.com",
+    "varun.c@wellbeingnutrition.com"
+    #"soumik@wellbeingnutrition.com",
+    #"khushbu.nishad@wellbeingnutrition.com",
+    #"ashutosh@wellbeingnutrition.com",
 ]
 FIXED_CC = [
-    "varun.c@wellbeingnutrition.com",
-    "alcantro@wellbeingnutrition.com",
-    "ravindra@wellbeingnutrition.com",
-    "adina@wellbeingnutrition.com",
-    "shezana.bhojani@wellbeingnutrition.com",
-    "yash.sawant@wellbeingnutrition.com",
-    "shareena.dsilva@wellbeingnutrition.com",
+    "shivani.gire@wellbeingnutrition.com"
+    #"varun.c@wellbeingnutrition.com",
+    #"alcantro@wellbeingnutrition.com",
+    #"ravindra@wellbeingnutrition.com",
+    #"adina@wellbeingnutrition.com",
+    #"shezana.bhojani@wellbeingnutrition.com",
+    #"yash.sawant@wellbeingnutrition.com",
+    #"shareena.dsilva@wellbeingnutrition.com",
+    #"shivani.gire@wellbeingnutrition.com",
 ]
 
 
@@ -95,7 +98,8 @@ def _send_once(event_key, email_type, period_label, subject, body, _event_recipi
     # Recognition messages always go to the CRM leadership group.  Every active
     # member of the Shopify/CRM roster is copied dynamically, so newly-added
     # team members are included without changing this scheduler.
-    team_cc = list(_email_directory().values())
+    # team_cc = list(_email_directory().values())
+    team_cc = []
     recipients = list(dict.fromkeys(address.lower() for address in ALWAYS_TO if address))
     if not recipients or _already_sent(event_key):
         return False
