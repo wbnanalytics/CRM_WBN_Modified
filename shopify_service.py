@@ -413,7 +413,7 @@ def sync_shopify(start_date, end_date, order_detail_start=None):
     received = saved = 0
     try:
         token = _access_token()
-        for chunk_start, chunk_end in _date_chunks(start, end):
+        for chunk_start, chunk_end in _date_chunks(start, end, days=2):
             query = f"""FROM sales
 SHOW gross_sales, discounts, total_sales, orders
 TIMESERIES day

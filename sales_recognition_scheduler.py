@@ -101,22 +101,39 @@ def _send_once(event_key, email_type, period_label, subject, body, _event_recipi
     # team_cc = list(_email_directory().values())
     team_cc = []
     recipients = list(dict.fromkeys(address.lower() for address in ALWAYS_TO if address))
-    if not recipients or _already_sent(event_key):
+    if not recipients:
         return False
+
+    # Atomic lock: claim the unique event_key in the database BEFORE sending.
+    # If another process or worker is already sending this email, rowcount will be 0.
+    with db_connection() as db:
+        cursor = db.execute(
+            """INSERT OR IGNORE INTO crm_recognition_email_log
+               (event_key, email_type, period_label, recipients, sent_at)
+               VALUES (?, ?, ?, ?, ?)""",
+            (event_key, email_type, period_label, ",".join(recipients), utc_now()),
+        )
+        if cursor.rowcount == 0:
+            return False
+
     recipient_set = set(recipients)
     cc = list(dict.fromkeys(
         address.lower()
         for address in [*FIXED_CC, *team_cc]
         if address and address.lower() not in recipient_set
     ))
-    send_html_email(
-        subject, body, html.unescape(subject), recipients, cc=cc,
-        inline_images={"wbn-logo": _logo_path()},
-        require_graph=True,
-    )
-    _record_sent(event_key, email_type, period_label, recipients)
-    print(f"SENT {event_key} -> {','.join(recipients)}")
-    return True
+    try:
+        send_html_email(
+            subject, body, html.unescape(subject), recipients, cc=cc,
+            inline_images={"wbn-logo": _logo_path()},
+            require_graph=True,
+        )
+        print(f"SENT {event_key} -> {','.join(recipients)}")
+        return True
+    except Exception as exc:
+        with db_connection() as db:
+            db.execute("DELETE FROM crm_recognition_email_log WHERE event_key=?", (event_key,))
+        raise exc
 
 
 def _emails_for_rows(rows):
@@ -137,6 +154,7 @@ def send_ranking(kind, start, end):
 
 def _is_working_day(day):
     return day.weekday() < 5
+
 
 
 def send_target_achievers(today):
@@ -191,3 +209,4 @@ if __name__ == "__main__":
     parser.add_argument("mode", choices=("daily", "weekly", "closing", "targets"))
     args = parser.parse_args()
     run(args.mode)
+

@@ -111,12 +111,15 @@ def sync_attendance_business_roles():
 sync_attendance_business_roles()
 
 
-def _start_recognition_scheduler():
+def _start_background_scheduler():
     import threading
     import time
 
+    sync_lock = threading.Lock()
+
     def _worker():
         last_daily_date = None
+        last_hourly_hour = None
         while True:
             try:
                 now = datetime.now(IST)
@@ -128,15 +131,37 @@ def _start_recognition_scheduler():
                         run_recognition("daily", now=now)
                     except Exception as err:
                         app.logger.error("Recognition daily run failed: %s", err)
+
+                # Check for hourly Shopify sync at :05 past every hour
+                current_hour = (now.date(), now.hour)
+                if now.minute >= 5 and last_hourly_hour != current_hour:
+                    last_hourly_hour = current_hour
+
+                    def _run_hourly_sync():
+                        if not sync_lock.acquire(blocking=False):
+                            return
+                        try:
+                            from shopify_service import sync_shopify, shopify_configured
+                            if shopify_configured():
+                                today = datetime.now(IST).date()
+                                start = today - timedelta(days=44)
+                                sync_shopify(start, today)
+                        except Exception as err:
+                            app.logger.error("Hourly Shopify sync failed: %s", err)
+                        finally:
+                            sync_lock.release()
+
+                    threading.Thread(target=_run_hourly_sync, daemon=True, name="shopify-hourly-sync").start()
+
             except Exception as err:
-                app.logger.error("Recognition scheduler loop error: %s", err)
+                app.logger.error("Background scheduler loop error: %s", err)
             time.sleep(30)
 
-    thread = threading.Thread(target=_worker, name="wbn-recognition-scheduler", daemon=True)
+    thread = threading.Thread(target=_worker, name="wbn-background-scheduler", daemon=True)
     thread.start()
 
 
-_start_recognition_scheduler()
+_start_background_scheduler()
 
 
 REPORT_SOURCES = {
