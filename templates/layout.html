@@ -69,7 +69,7 @@
         <span class="ticker-live"><i></i><small>LIVE DATA</small><strong data-ist-clock>IST</strong></span>
         <div class="ticker-window">
           <div class="ticker-track">
-            {% for repeat in range(4) %}{% for item in refresh_ticker['items'] %}<span
+            {% for repeat in range(2) %}{% for item in refresh_ticker['items'] %}<span
               class="ticker-item {{ item.status }}"><b>{{ item.label }}</b><em>{{ 'Updated' if item.status == 'success'
                 else item.status|title }}</em>{% if item.completed_at %}<time data-ist-time="{{ item.completed_at }}">{{
                 item.completed_at|ist_datetime }}</time>{% endif %}<small>Auto: {{ item.schedule }}</small></span>{%
