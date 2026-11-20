@@ -144,7 +144,7 @@ def _start_background_scheduler():
                             from shopify_service import sync_shopify, shopify_configured
                             if shopify_configured():
                                 today = datetime.now(IST).date()
-                                start = today - timedelta(days=44)
+                                start = today - timedelta(days=2)
                                 sync_shopify(start, today)
                         except Exception as err:
                             app.logger.error("Hourly Shopify sync failed: %s", err)
