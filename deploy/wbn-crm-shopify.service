@@ -9,6 +9,6 @@ User=wbncrm
 Group=wbncrm
 WorkingDirectory=/opt/wbn-crm/current
 EnvironmentFile=/etc/wbn-crm.env
-ExecStart=/opt/wbn-crm/venv/bin/python sync_shopify.py --rolling-days 45
+ExecStart=/opt/wbn-crm/venv/bin/python sync_shopify.py --rolling-days 3
 Nice=5
 
